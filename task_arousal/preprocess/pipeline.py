@@ -27,6 +27,7 @@ import pandas as pd
 
 from nilearn.image import clean_img, smooth_img
 from nilearn.masking import apply_mask, unmask
+from requests import session
 from scipy.stats import zscore
 
 from task_arousal.constants import MASK, TR, SLICE_TIMING_REF
@@ -71,6 +72,7 @@ class PreprocessingPipeline:
     def preprocess(
         self, 
         task: str | None = None,
+        sessions: list[str] | None = None,
         skip_func: bool = False,
         skip_physio: bool = False,
         verbose: bool = True,
@@ -82,6 +84,8 @@ class PreprocessingPipeline:
         ----------
         task : str or None, optional
             The task identifier. If no task identifier is provided, all tasks will be processed. Defaults to None.
+        sessions : list of str or None, optional
+            The session identifiers. If no session identifiers are provided, all sessions will be processed. Defaults to None.
         skip_func : bool, optional
             Whether to skip fMRI preprocessing. Defaults to False.
         skip_physio : bool, optional
@@ -109,12 +113,15 @@ class PreprocessingPipeline:
         # loop through each task and process scans and physio from all sessions (and runs)
         for task in tasks_to_process:
             if verbose:
-                print(f"Processing task '{task}' for subject '{self.subject}'...")
+                print(
+                    f"Processing task '{task}' for subject '{self.subject}' "
+                    f"and sessions '{sessions if sessions is not None else 'all'}'..."
+                )
 
             # functional MRI preprocessing
             if not skip_func:
                 # get fmri files for task
-                fmri_files = self.file_mapper.get_fmri_files(task)
+                fmri_files = self.file_mapper.get_fmri_files(task, sessions=sessions)
                 # loop through fmri files and preprocess
                 for fmri_file in fmri_files:
                     if verbose:
@@ -127,7 +134,7 @@ class PreprocessingPipeline:
             # physio preprocessing pipeline
             if not skip_physio:
                 # get physio files (and JSON sidecars) for task
-                physio_files = self.file_mapper.get_physio_files(task, return_json=True)
+                physio_files = self.file_mapper.get_physio_files(task, return_json=True, sessions=sessions)
                 # loop through physio files and preprocess
                 for physio_file in physio_files:
                     if verbose:

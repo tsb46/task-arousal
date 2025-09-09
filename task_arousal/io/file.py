@@ -2,7 +2,7 @@
 Class for iterating over subject fMRI and physio data files
 """
 from pathlib import Path
-from typing import Tuple, Literal
+from typing import List, Tuple, Literal
 
 from bids import BIDSLayout
 
@@ -33,6 +33,7 @@ class FileMapper:
     def get_fmri_files(
         self, 
         task: str,
+        sessions: List[str] | None = None,
         file_type: Literal['fmriprep', 'final'] = 'fmriprep'
     ) -> list[str]:
         """
@@ -42,6 +43,8 @@ class FileMapper:
         ----------
         task : str
             The task identifier.
+        sessions : list of str, optional
+            The sessions to include. If None, all sessions are included.
         file_type : {'fmriprep', 'final'}
             The type of fMRI files to retrieve. 'fmriprep' returns files
             with the 'preproc' description (output of fMRIPrep preprocessing).
@@ -57,9 +60,14 @@ class FileMapper:
             desc = 'preproc'
         elif file_type == 'final':
             desc = 'preprocfinal'
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(f"Session '{session}' is not valid for subject '{self.subject}'.")
 
         fmri_files = []
-        for session in self.sessions:
+        for session in (sessions if sessions is not None else self.sessions):
             files = self.get_session_fmri_files(session, task, desc=desc)
             fmri_files.extend(files)
         return fmri_files
@@ -67,6 +75,7 @@ class FileMapper:
     def get_physio_files(
         self, 
         task: str,
+        sessions: List[str] | None = None,
         return_json: bool = False,
         file_type: Literal['fmriprep', 'final'] = 'fmriprep'
     ) -> list[str] | list[Tuple[str,str]]:
@@ -77,6 +86,8 @@ class FileMapper:
         ----------
         task : str
             The task identifier.
+        sessions : list of str, optional
+            The sessions to include. If None, all sessions are included.
         return_json : bool
             Whether to return the json sidecar files.
         file_type : {'fmriprep', 'final'}
@@ -95,16 +106,21 @@ class FileMapper:
             desc = None
         elif file_type == 'final':
             desc = 'preproc'
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(f"Session '{session}' is not valid for subject '{self.subject}'.")
 
         physio_files = []
-        for session in self.sessions:
+        for session in (sessions if sessions is not None else self.sessions):
             files = self.get_session_physio_files(session, task, desc=desc)
             physio_files.extend(files)
         if return_json:
             return [(f, f.replace('.tsv.gz', '.json')) for f in physio_files]
         return physio_files
 
-    def get_event_files(self, task: str) -> list[list[tuple[str, str]]]:
+    def get_event_files(self, task: str, sessions: List[str] | None = None) -> list[list[tuple[str, str]]]:
         """
         Get the event files from all sessions for a specific task.
 
@@ -118,8 +134,14 @@ class FileMapper:
         list of list of tuple of str
             A nested list of onset and duration file path tuples (onset, duration) by session.
         """
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(f"Session '{session}' is not valid for subject '{self.subject}'.")
+
         event_files = []
-        for session in self.sessions:
+        for session in (sessions if sessions is not None else self.sessions):
             files = self.get_session_event_files(session, task)
             event_files.append(files)
         return event_files
