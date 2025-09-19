@@ -25,6 +25,10 @@ class FileMapper:
         """
         self.subject = subject
         self.layout = BIDSLayout(DATA_DIRECTORY, derivatives=True)
+        # get available subjects in the dataset
+        self.available_subjects = self.layout.get_subjects()
+        if subject not in self.available_subjects:
+            raise ValueError(f"Subject '{subject}' not found in dataset.")
         # get the sessions for the subject
         self.sessions = self.layout.get_sessions(subject=subject)
         # get the tasks for the subject
