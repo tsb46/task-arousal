@@ -2,9 +2,6 @@
 Functions for feature extraction from physiological data.
 """
 
-from sys import platlibdir
-from typing import Literal
-
 import numpy as np
 import neurokit2 as nk
 
