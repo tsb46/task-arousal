@@ -20,6 +20,7 @@ import os
 
 from typing import Tuple
 
+import matplotlib.pyplot as plt
 import nibabel as nib
 import neurokit2 as nk
 import numpy as np
@@ -34,7 +35,9 @@ from task_arousal.constants import MASK, TR, SLICE_TIMING_REF
 from task_arousal.io.file import FileMapper
 from task_arousal.preprocess.physio_features import (
     extract_ppg_features, 
-    extract_resp_features
+    extract_resp_features,
+    extract_resp_co2_features,
+    extract_resp_o2_features
 )
 
 ## Preprocessing parameters
@@ -75,6 +78,7 @@ class PreprocessingPipeline:
         sessions: list[str] | None = None,
         skip_func: bool = False,
         skip_physio: bool = False,
+        save_physio_figs: bool = False,
         verbose: bool = True,
     ) -> None:
         """
@@ -157,7 +161,12 @@ class PreprocessingPipeline:
                             print(f"Found matching fMRI file: {matching_fmri_file}")
 
                     # Apply the physiological preprocessing pipeline
-                    physio_proc = physio_pipeline(physio_file[0], physio_file[1], matching_fmri_file)
+                    physio_proc = physio_pipeline(
+                        physio_fp=physio_file[0], 
+                        physio_json=physio_file[1],  
+                        fmri_fp=matching_fmri_file, 
+                        save_physio_figs=save_physio_figs
+                    )
                     # Write out the preprocessed physiological file
                     self.write_out_physio_file(physio_proc, physio_file[0])
 
@@ -264,13 +273,18 @@ def func_pipeline(func_fp: str) -> nib.Nifti1Image: # type: ignore
     return func_img_proc # type: ignore
 
 
-def physio_pipeline(physio_fp: str, physio_json: str, fmri_fp: str) -> dict[str, np.ndarray]:
+def physio_pipeline(
+    physio_fp: str, 
+    physio_json: str, 
+    fmri_fp: str, 
+    save_physio_figs: bool = False
+) -> dict[str, np.ndarray]:
     """
     Physiological pipeline for processing physiological data.
 
     Preprocessing steps:
 
-    1) Resample to 10Hz (polyphase filtering to avoid aliasing)
+    1) Resample to 50Hz (polyphase filtering to avoid aliasing)
     2) Feature extraction
     3) Resample to fMRI time points (low-pass filter to avoid aliasing, then interpolate)
     4) Band-pass filtering to match fMRI bandpass (0.01 - 0.3)
@@ -284,6 +298,8 @@ def physio_pipeline(physio_fp: str, physio_json: str, fmri_fp: str) -> dict[str,
         The file path to the physiological JSON sidecar.
     fmri_fp : str
         The file path to the functional MRI data (to get number of time points for resampling).
+    save_physio_figs : bool, optional
+        Whether to save figures of the physiological signals, by default False.
 
     Returns
     -------
@@ -299,12 +315,13 @@ def physio_pipeline(physio_fp: str, physio_json: str, fmri_fp: str) -> dict[str,
     feature_extraction_funcs = {
         'respiratory_effort': extract_resp_features,
         'cardiac': extract_ppg_features,
-        # Add other physiological signals and their corresponding extraction functions here
+        'respiratory_CO2': extract_resp_co2_features,
+        'respiratory_O2': extract_resp_o2_features,
     }
     # loop through physio columns and extract features
     physio_data_proc = {}
     for col in PHYSIO_COLUMNS:
-        # physio has high sampling rate (1000Hz), so we can downsample to 10Hz
+        # physio has high sampling rate (1000Hz), so we can downsample to 50Hz
         # use polyphase filtering to avoid aliasing
         physio_resampled = nk.signal_resample(
             physio_dict[col], 
@@ -312,6 +329,15 @@ def physio_pipeline(physio_fp: str, physio_json: str, fmri_fp: str) -> dict[str,
             desired_sampling_rate=PHYSIO_RESAMPLE_F,
             method='poly'
         )
+        if save_physio_figs:
+            # save figure of resampled physio signal
+            fig_fp = physio_fp.replace('.tsv.gz', f'_{col}.png')
+            _physio_write_image(
+                fp_out=fig_fp, 
+                ts=physio_resampled, # type: ignore
+                sf=PHYSIO_RESAMPLE_F, 
+                label=col
+            )
         assert isinstance(physio_resampled, np.ndarray), "Resampled physiological data is not a numpy array."
         # extract features
         if col in feature_extraction_funcs:
@@ -554,3 +580,30 @@ def _physio_resample_to_fmri(
     )
 
     return physio_ts_resamp
+
+def _physio_write_image(fp_out: str, ts: np.ndarray, sf: float, label: str) -> None:
+    """
+    Write physiological time series to image file.
+
+    Parameters
+    ----------
+    fp_out : str
+        The file path to save the image.
+    ts : np.ndarray
+        The physiological time series.
+    sf : float
+        The sampling frequency of the physiological data.
+    label : str
+        The label for the physiological signal.
+
+    Returns
+    -------
+    None
+    """
+    # plot the time series and save to file
+    fig, ax = plt.subplots(figsize=(15,5))
+    signal_t = np.arange(len(ts))*(1/sf)
+    ax.plot(signal_t, ts, label=label)
+    ax.legend()
+    plt.savefig(fp_out)
+    plt.close()
