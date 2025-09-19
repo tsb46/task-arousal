@@ -27,11 +27,17 @@ class FileMapper:
         # initialize BIDS layout
         print("Initializing BIDS layout for subject:", subject)
         if IS_DERIVED:
-            self.layout = BIDSLayout(DATA_DIRECTORY, is_derived=True)
+            self.layout = BIDSLayout(DATA_DIRECTORY, is_derivative=True)
         else:
             self.layout = BIDSLayout(DATA_DIRECTORY, derivatives=True)
+
         # get available subjects in the dataset
         self.available_subjects = self.layout.get_subjects()
+        # check whether any subjects are found
+        if not self.available_subjects:
+            raise RuntimeError(f"No subjects found in BIDS directory: {DATA_DIRECTORY}")
+        breakpoint()
+        # check if subject is valid
         if subject not in self.available_subjects:
             raise ValueError(f"Subject '{subject}' not found in dataset.")
         # get the sessions for the subject
