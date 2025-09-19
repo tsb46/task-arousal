@@ -2,7 +2,7 @@
 Class for managing and loading preprocessed dataset files for 
 a given subject.
 """
-from typing import List, TypedDict, Union, Tuple
+from typing import List, TypedDict
 
 import pandas as pd
 import nibabel as nib
