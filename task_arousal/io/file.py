@@ -36,7 +36,7 @@ class FileMapper:
         # check whether any subjects are found
         if not self.available_subjects:
             raise RuntimeError(f"No subjects found in BIDS directory: {DATA_DIRECTORY}")
-        breakpoint()
+
         # check if subject is valid
         if subject not in self.available_subjects:
             raise ValueError(f"Subject '{subject}' not found in dataset.")
@@ -297,7 +297,7 @@ class FileMapper:
         """
         bids_files = self.layout.get(
             subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
-            run=run, desc=desc
+            run=run, desc=desc, echo=None
         )
         filenames = [f.path for f in bids_files]
         return filenames
