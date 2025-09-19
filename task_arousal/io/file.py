@@ -29,6 +29,14 @@ class FileMapper:
         self.sessions = self.layout.get_sessions(subject=subject)
         # get the tasks for the subject
         self.tasks = self.layout.get_tasks(subject=subject)
+        # loop through sessions and get runs for each task
+        self.tasks_runs = {}
+        for task in self.tasks:
+            self.tasks_runs[task] = {}
+            for session in self.sessions:
+                self.tasks_runs[task][session] = self.layout.get_runs(
+                    subject=subject, session=session, task=task
+                )
 
     def get_fmri_files(
         self, 
@@ -68,8 +76,16 @@ class FileMapper:
 
         fmri_files = []
         for session in (sessions if sessions is not None else self.sessions):
-            files = self.get_session_fmri_files(session, task, desc=desc)
-            fmri_files.extend(files)
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                for run in runs:
+                    files = self.get_session_fmri_files(session, task, run=run, desc=desc)
+                    fmri_files.extend(files)
+            else:
+                files = self.get_session_fmri_files(session, task, desc=desc)
+                fmri_files.extend(files)
         return fmri_files
 
     def get_physio_files(
@@ -114,8 +130,16 @@ class FileMapper:
 
         physio_files = []
         for session in (sessions if sessions is not None else self.sessions):
-            files = self.get_session_physio_files(session, task, desc=desc)
-            physio_files.extend(files)
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                for run in runs:
+                    files = self.get_session_physio_files(session, task, run=run, desc=desc)
+                    physio_files.extend(files)
+            else:
+                files = self.get_session_physio_files(session, task, desc=desc)
+                physio_files.extend(files)
         if return_json:
             return [(f, f.replace('.tsv.gz', '.json')) for f in physio_files]
         return physio_files
@@ -142,8 +166,17 @@ class FileMapper:
 
         event_files = []
         for session in (sessions if sessions is not None else self.sessions):
-            files = self.get_session_event_files(session, task)
-            event_files.append(files)
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                files = []
+                for run in runs:
+                    run_files = self.get_session_event_files(session, task, run=run)
+                    event_files.extend(run_files)
+            else:
+                files = self.get_session_event_files(session, task)
+                event_files.append(files)
         return event_files
 
     def get_matching_files(
@@ -289,7 +322,12 @@ class FileMapper:
         filenames = [f.path for f in bids_files]
         return filenames
 
-    def get_session_event_files(self, session: str, task: str, run: str | None = None) -> list[tuple[str, str]]:
+    def get_session_event_files(
+        self, 
+        session: str, 
+        task: str, 
+        run: str | None = None
+    ) -> list[tuple[str, str]]:
         """
         Get the event files for a specific session and task. Event files
         include task onset and duration 1D files output from AFNI preprocessing.
@@ -312,14 +350,19 @@ class FileMapper:
             subject=self.subject, session=session, task=task, suffix='onset', extension='.1D',
             run=run
         )
-        bids_files_duration = self.layout.get(
-            subject=self.subject, session=session, task=task, suffix='duration', extension='.1D',
-            run=run
-        )
-        filenames = [f.path for f in bids_files_onset]
-        durations = [f.path for f in bids_files_duration]
-        return list(zip(filenames, durations))
-    
+        fp_onsets = [f.path for f in bids_files_onset]
+        # for the simon task, no duration files are provided from congruent/incongruent events
+        # so we will return None for duration files
+        if task == 'simon':
+            fp_durations = [''] * len(bids_files_onset)
+        else:
+            bids_files_duration = self.layout.get(
+                subject=self.subject, session=session, task=task, suffix='duration', extension='.1D',
+                run=run
+            )
+            fp_durations = [f.path for f in bids_files_duration]
+        return list(zip(fp_onsets, fp_durations))
+
     def modify_file_name(self, file_path: str, entity_update: dict[str, str]) -> str:
         """
         Modify a BIDS file path by updating specific entities.
