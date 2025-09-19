@@ -2,7 +2,7 @@
 Class for managing and loading preprocessed dataset files for 
 a given subject.
 """
-from typing import List, TypedDict
+from typing import List, TypedDict, Union, Tuple
 
 import pandas as pd
 import nibabel as nib
@@ -16,7 +16,7 @@ from task_arousal.io.file import FileMapper
 
 # TypedDict for dataset returned from load_data
 class DatasetLoad(TypedDict):
-    fmri: List[np.ndarray]
+    fmri: List[np.ndarray] | List[nib.Nifti1Image] # type: ignore
     physio: List[pd.DataFrame]
     events: List[pd.DataFrame]
 
@@ -32,6 +32,14 @@ PINEL_CONDITIONS = [
     'vmot_left',
     'vmot_right',
     'vsent'
+]
+
+# conditions for simon task
+SIMON_CONDITIONS = [
+    'left_congruent',
+    'right_congruent',
+    'left_incongruent',
+    'right_incongruent'
 ]
 
 
@@ -65,6 +73,7 @@ class Dataset:
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
+        convert_to_2d: bool = True,
         verbose: bool = True
     ) -> DatasetLoad:
         """
@@ -77,9 +86,15 @@ class Dataset:
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
-            Whether to concatenate data across sessions. Default is False.
+            Whether to concatenate data across sessions. 
+            If convert_to_2d is False, this will be ignored. Default is False.
         normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension. Default is True.
+            Whether to normalize (z-score) the data along the time dimension. 
+            If convert_to_2d is False, this will be ignored. Default is True.
+        convert_to_2d : bool, optional
+            Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
+        verbose : bool, optional
+            Whether to print progress messages. Default is True.
         """
         # if task is not None, ensure it's an available task
         if task not in self.tasks:
@@ -89,6 +104,13 @@ class Dataset:
         # select conditions based on task
         if task == 'pinel':
             conditions = PINEL_CONDITIONS
+            has_events = True
+        elif task == 'breathhold':
+            conditions = []
+            has_events = False
+        elif task == 'simon':
+            conditions = SIMON_CONDITIONS
+            has_events = True
         else:
             raise NotImplementedError(f"Conditions for task '{task}' are not defined.")
         # if sessions are provided, ensure it's a list
@@ -124,27 +146,33 @@ class Dataset:
             # load fMRI file
             fmri_files = self.file_mapper.get_session_fmri_files(session, task, desc='preprocfinal')
             assert len(fmri_files) == 1, f"Expected one fMRI file for session '{session}' and task '{task}', found {len(fmri_files)}."
-            fmri_data = self.load_fmri(fmri_files[0], normalize=normalize)
+            fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
             dataset['fmri'].append(fmri_data)
             # load event files
-            event_files = self.file_mapper.get_session_event_files(session, task)
-            assert len(conditions) == len(event_files), f"Expected {len(conditions)} event files for session '{session}' and task '{task}', found {len(event_files)}."
-            event_df = self.events_to_df(
-                fps_onset=[ef[0] for ef in event_files],
-                fps_duration=[ef[1] for ef in event_files],
-                conditions=conditions,
-                session=session
-            )
-            dataset['events'].append(event_df)
+            if has_events:
+                event_files = self.file_mapper.get_session_event_files(session, task)
+                event_df = self.events_to_df(
+                    fps_onset=[ef[0] for ef in event_files],
+                    fps_duration=[ef[1] for ef in event_files],
+                    conditions=conditions,
+                    task=task,
+                    session=session
+                )
+                dataset['events'].append(event_df)
 
         # concatenate data across sessions if requested
         if concatenate:
             if verbose:
                 print("Concatenating data across sessions...")
-            dataset['fmri'] = [np.concatenate(dataset['fmri'], axis=0)]
+            # do not concatenate if not converted to 2d
+            if convert_to_2d:
+                dataset['fmri'] = [np.concatenate(dataset['fmri'], axis=0)]
             dataset['physio'] = [pd.concat(dataset['physio'], axis=0, ignore_index=True)]
-            dataset['events'] = [pd.concat(dataset['events'], axis=0, ignore_index=True)]
+            if has_events:
+                dataset['events'] = [pd.concat(dataset['events'], axis=0, ignore_index=True)]
 
+        if verbose:
+            print("Data loading complete.")
         return DatasetLoad(**dataset)
 
     def events_to_df(
@@ -152,6 +180,7 @@ class Dataset:
         fps_onset: List[str], 
         fps_duration: List[str],
         conditions: List[str],
+        task: str,
         session: str
     ) -> pd.DataFrame:
         """
@@ -177,12 +206,19 @@ class Dataset:
         # extract event timings
         event_timing = []
         for c in conditions:
-            fp_c_onset = _select_condition(fps_onset, c)
-            fp_c_duration = _select_condition(fps_duration, c)
-            with open(fp_c_onset, 'r') as f:
-                onsets = [float(o) for o in f.read().strip().split(' ')]
-            with open(fp_c_duration, 'r') as f:
-                durations = [float(d) for d in f.read().strip().split(' ')]
+            if task == 'pinel':
+                onsets, durations = _extract_timing_pinel(
+                    fps_onset=fps_onset,
+                    fps_duration=fps_duration,
+                    condition=c
+                )
+            elif task == 'simon':
+                onsets, durations = _extract_timing_simon(
+                    fps_onset=fps_onset, 
+                    condition=c
+                )
+            else:
+                raise NotImplementedError(f"Event extraction not implemented for task '{task}'")
 
             for onset, duration in zip(onsets, durations):
                 event_timing.append((c, onset, duration))
@@ -222,7 +258,8 @@ class Dataset:
     def load_fmri(
         self,
         fp: str,
-        normalize: bool = False
+        normalize: bool = False,
+        convert_to_2d: bool = True
     ) -> np.ndarray:
         """
         Load the preprocessed fMRI data from a NIfTI file.
@@ -232,7 +269,10 @@ class Dataset:
         fp : str
             The path to the fMRI NIfTI file.
         normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension. Default is False.
+            Whether to normalize (z-score) the data along the time dimension. 
+            If convert_to_2d is False, this will be ignored. Default is False.
+        convert_to_2d : bool, optional
+            Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
 
         Returns
         -------
@@ -241,11 +281,15 @@ class Dataset:
             and time points along the rows.
         """
         fmri_img = nib.load(fp) # type: ignore
+        if not convert_to_2d:
+            return fmri_img # type: ignore
+
+        # apply mask to get 2D array (voxels x time points)
         fmri_data = apply_mask(fmri_img, self.mask)
         if normalize:
             fmri_data = zscore(fmri_data, axis=0) 
         return fmri_data # type: ignore
-    
+
     def to_4d(
         self,
         fmri_data: np.ndarray
@@ -268,12 +312,104 @@ class Dataset:
         return fmri_img_4d # type: ignore
 
 
+def _extract_timing_pinel(
+    fps_onset: List[str],
+    fps_duration: List[str],
+    condition: str
+) -> tuple[List[float], List[float]]:
+    """Extract timing information for a specific condition from onset and duration file paths for pinel task.
 
-# select condition from duration and onset file paths
-def _select_condition(fps: List[str], condition: str) -> str:
-    fp_selected = [fp for fp in fps if condition in fp]
-    if len(fp_selected) == 0:
-        raise ValueError(f"No files found for condition: {condition}")
-    elif len(fp_selected) > 1:
-        raise ValueError(f"Multiple files found for condition: {condition}")
-    return fp_selected[0]
+    Parameters:
+    ----------
+    fps_onset : List[str]
+        List of file paths to onset files.
+    fps_duration : List[str]
+        List of file paths to duration files.
+    condition : str
+        The condition to extract timing information for.
+
+    Raises:
+        ValueError: If no onset files are found for the condition.
+        ValueError: If multiple onset files are found for the condition.
+        ValueError: If no duration files are found for the condition.
+        ValueError: If multiple duration files are found for the condition.
+
+    Returns:
+        tuple[List[float], List[float]]: A tuple containing two lists: the onsets and durations for the condition.
+    """
+    # find onset files for condition
+    fp_condition_onset = [fp for fp in fps_onset if condition in fp]
+    if len(fp_condition_onset) == 0:
+            raise ValueError(f"No onset files found for condition: {condition} in pinel task")
+    elif len(fp_condition_onset) > 1:
+        raise ValueError(f"Multiple onset files found for condition: {condition} in pinel task")
+    # load onset files for condition
+    with open(fp_condition_onset[0], 'r') as f:
+        c_onsets = [float(o) for o in f.read().strip().split(' ')]
+
+    # find duration files for condition
+    fp_condition_duration = [fp for fp in fps_duration if condition in fp]
+    if len(fp_condition_duration) == 0:
+        raise ValueError(f"No duration files found for condition: {condition} in pinel task")
+    elif len(fp_condition_duration) > 1:
+        raise ValueError(f"Multiple duration files found for condition: {condition} in pinel task")
+    # load duration files for condition
+    with open(fp_condition_duration[0], 'r') as f:
+        c_durations = [float(d) for d in f.read().strip().split(' ')]
+
+    # extract timing information from file paths for pinel task
+    return c_onsets, c_durations
+
+
+def _extract_timing_simon(
+    fps_onset: List[str],
+    condition: str
+) -> tuple[List[float], List[float]]:
+    """
+    Extract timing information for a specific condition from onset and duration
+    file paths for simon task. The simon task has onset and duration in the onset
+    files, so only the onset files are used. Each space-separated value has the onset
+    in the first position, and the duration in the second position, separated by a colon ':'.
+    In some cases, the subject responded correctly to all trials of a condition. In these cases,
+    the onset file will contain one entry with a value of '-1:0' to indicate no incorrect trials.
+
+    Parameters:
+    ----------
+    fps_onset : List[str]
+        List of file paths to onset files.
+    condition : str
+        The condition to extract timing information for.
+
+    Raises:
+        ValueError: If no onset files are found for the condition.
+        ValueError: If more than two onset files are found for the condition (correct and incorrect conditions).
+
+    Returns:
+        tuple[List[float], List[float]]: A tuple containing two lists: the onsets and durations for the condition.
+    """
+    # find onset files for condition
+    fps_condition_onset = [fp for fp in fps_onset if condition in fp]
+    if len(fps_condition_onset) == 0:
+            raise ValueError(f"No onset files found for condition: {condition} in simon task")
+    elif len(fps_condition_onset) == 1:
+        raise ValueError(f"Only one onset file found for condition: {condition} in simon task. Two files expected (correct and incorrect conditions).")
+    elif len(fps_condition_onset) > 2:
+        raise ValueError(f"More than two onset files found for condition: {condition} in simon task")
+    
+    # load onset files for correct and incorrect conditions
+    c_onsets = []
+    c_durations = []
+    for fp in fps_condition_onset:
+        with open(fp, 'r') as f:
+            c_onset_duration = [o.split(':') for o in f.read().strip().split(' ')]
+            try:
+                c_onsets.extend([float(od[0]) for od in c_onset_duration if float(od[0]) >= 0])
+                c_durations.extend([float(od[1]) for od in c_onset_duration if float(od[0]) >= 0])
+            except IndexError:
+                raise ValueError(
+                    f"Onset file for condition: {condition} in simon task does not have correct format."
+                    " Each value should have onset and duration separated by a colon ':'."
+                )
+
+    # extract timing information from file paths for simon task
+    return c_onsets, c_durations
