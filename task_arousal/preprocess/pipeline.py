@@ -28,7 +28,6 @@ import pandas as pd
 
 from nilearn.image import clean_img, smooth_img
 from nilearn.masking import apply_mask, unmask
-from requests import session
 from scipy.stats import zscore
 
 from task_arousal.constants import MASK, TR, SLICE_TIMING_REF
