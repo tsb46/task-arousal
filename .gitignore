@@ -49,3 +49,6 @@ MANIFEST
 # scratch files
 scratch.py
 scratch.ipynb
+
+# environment variables
+.env

@@ -1,9 +1,16 @@
 """
 Constants for the task arousal analysis.
 """
+import os
+from dotenv import load_dotenv
+
+# load environment variables from .env file
+load_dotenv()
 
 # path to data directory
-DATA_DIRECTORY = "data"
+DATA_DIRECTORY = os.getenv('DATA_DIRECTORY', 'data')
+IS_DERIVED = os.getenv('IS_DERIVED', 'false').lower() == 'true'
+
 # Brain mask
 MASK = 'templates/MNI152_T1_2mm_brain_mask_dil.nii.gz'
 # TR (Repetition Time) in seconds

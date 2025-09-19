@@ -6,7 +6,7 @@ from typing import List, Tuple, Literal
 
 from bids import BIDSLayout
 
-from task_arousal.constants import DATA_DIRECTORY
+from task_arousal.constants import DATA_DIRECTORY, IS_DERIVED
 
 
 class FileMapper:
@@ -24,7 +24,12 @@ class FileMapper:
             The subject identifier.
         """
         self.subject = subject
-        self.layout = BIDSLayout(DATA_DIRECTORY, derivatives=True)
+        # initialize BIDS layout
+        print("Initializing BIDS layout for subject:", subject)
+        if IS_DERIVED:
+            self.layout = BIDSLayout(DATA_DIRECTORY, is_derived=True)
+        else:
+            self.layout = BIDSLayout(DATA_DIRECTORY, derivatives=True)
         # get available subjects in the dataset
         self.available_subjects = self.layout.get_subjects()
         if subject not in self.available_subjects:
