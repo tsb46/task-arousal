@@ -3,7 +3,7 @@ name = "task-arousal"
 version = "0.1.0"
 description = "Analysis of task-fMRI with physiological data"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "fbpca>=1.0",
     "matplotlib>=3.10.6",
@@ -11,6 +11,7 @@ dependencies = [
     "nibabel>=5.3.2",
     "nilearn>=0.12.0",
     "pandas>=2.3.2",
+    "patsy>=1.0.1",
     "pybids>=0.19.0",
     "pyqt5>=5.15.11",
 ]
