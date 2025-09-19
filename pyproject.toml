@@ -15,3 +15,5 @@ dependencies = [
     "pybids>=0.19.0",
     "pyqt5>=5.15.11",
 ]
+[tool.setuptools.packages.find]
+where = ["task_arousal"]
