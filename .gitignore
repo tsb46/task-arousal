@@ -52,3 +52,4 @@ scratch.ipynb
 
 # environment variables
 .env
+env/
