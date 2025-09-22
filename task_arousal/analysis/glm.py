@@ -24,8 +24,6 @@ class GLMResults:
 
     Attributes
     ----------
-    model: FirstLevelModel
-        the fitted GLM model
     design_matrix: pd.DataFrame
         the design matrix used in the GLM
     contrast_maps: dict[str, nib.Nifti1Image]
@@ -34,8 +32,6 @@ class GLMResults:
         the hemodynamic response function used in the GLM
 
     """
-
-    model: FirstLevelModel
     contrast_maps: dict[str, nib.Nifti1Image] # type: ignore
     hrf: str
     fir_delays: np.ndarray | None = None
@@ -48,8 +44,6 @@ class GLMPhysioResults:
 
     Attributes
     ----------
-    model: FirstLevelModel
-        the fitted GLM model
     design_matrix: pd.DataFrame
         the design matrix used in the GLM
     contrast_maps: dict[str, nib.Nifti1Image]
@@ -58,7 +52,6 @@ class GLMPhysioResults:
         the hemodynamic response function used in the GLM
     """
     pred_func: np.ndarray
-    model: Ridge
     physio_val: List[float]
     physio_lag: int
     design_matrix_cols: List[str]
@@ -158,7 +151,6 @@ class GLM:
             }
 
         return GLMResults(
-            model=model,
             contrast_maps=contrast_maps, # type: ignore
             hrf=self.hrf,
             fir_delays=self.fir_delays
@@ -338,7 +330,6 @@ class GLMPhysio:
 
         return GLMPhysioResults(
             pred_func=pred_func,
-            model=self.model,
             physio_val=physio_val.tolist(),
             physio_lag=self.physio_lag,
             design_matrix_cols=self.design_matrix_cols,
