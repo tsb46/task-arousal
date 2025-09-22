@@ -26,6 +26,15 @@ class FileMapper:
         self.subject = subject
         # initialize BIDS layout
         print("Initializing BIDS layout for subject:", subject)
+        """
+        Note: the filemapper class assumes that fmri, physio and event files 
+        are in a single BIDS directory structure. Physio files are in the 'raw'
+        BIDS directory and are not copied into the FMRIPrep derivatives folder. We
+        must manually (or through a script) copy the physio files in the raw BIDS 
+        directory to the FMRIPrep derivatives folder to ensure that the FileMapper
+        can find them.
+        """
+        # The BIDSLayout initialization can be slow, especially for large datasets
         if IS_DERIVED:
             self.layout = BIDSLayout(DATA_DIRECTORY, is_derivative=True)
         else:
@@ -246,7 +255,8 @@ class FileMapper:
             task=file_entities.get('task', None),
             session=file_entities.get('session', None),
             run=file_entities.get('run', None),
-            desc=desc
+            desc=desc,
+            echo=None
         )
         return [f.path for f in bids_files]
 
