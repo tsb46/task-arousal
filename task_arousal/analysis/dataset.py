@@ -101,16 +101,23 @@ class Dataset:
             raise ValueError(
                 f"Task '{task}' is not available for subject '{self.subject}'."
             )
-        # select conditions based on task
+        # select conditions and runs based on task
         if task == 'pinel':
             conditions = PINEL_CONDITIONS
             has_events = True
+            runs = self.file_mapper.tasks_runs[task]
         elif task == 'simon':
             conditions = SIMON_CONDITIONS
             has_events = True
-        elif task in ('breathhold', 'rest'):
+            runs = self.file_mapper.tasks_runs[task]
+        elif task in 'breathhold':
             conditions = []
             has_events = False
+            runs = self.file_mapper.tasks_runs[task]
+        elif task == 'rest':
+            conditions = []
+            has_events = False
+            runs = self.file_mapper.tasks_runs[task]
         else:
             raise NotImplementedError(f"Conditions for task '{task}' are not defined.")
         # if sessions are provided, ensure it's a list
@@ -138,27 +145,38 @@ class Dataset:
         for session in sessions:
             if verbose:
                 print(f"  Loading session '{session}'...")
-            # load physio file
-            physio_files = self.file_mapper.get_session_physio_files(session, task, desc='preproc')
-            assert len(physio_files) == 1, f"Expected one physio file for session '{session}' and task '{task}', found {len(physio_files)}."
-            physio_df = self.load_physio(physio_files[0], normalize=normalize)
-            dataset['physio'].append(physio_df)
-            # load fMRI file
-            fmri_files = self.file_mapper.get_session_fmri_files(session, task, desc='preprocfinal')
-            assert len(fmri_files) == 1, f"Expected one fMRI file for session '{session}' and task '{task}', found {len(fmri_files)}."
-            fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
-            dataset['fmri'].append(fmri_data)
-            # load event files
-            if has_events:
-                event_files = self.file_mapper.get_session_event_files(session, task)
-                event_df = self.events_to_df(
-                    fps_onset=[ef[0] for ef in event_files],
-                    fps_duration=[ef[1] for ef in event_files],
-                    conditions=conditions,
-                    task=task,
-                    session=session
-                )
-                dataset['events'].append(event_df)
+            
+            # if runs is empty, create list with None to loop through at least once
+            if len(runs[session]) == 0:
+                runs_session = [None]
+            else:
+                runs_session = runs[session]
+
+            # loop through runs for session
+            for run in runs_session:
+                # load physio file
+                physio_files = self.file_mapper.get_session_physio_files(session, task, run=run, desc='preproc')
+                assert len(physio_files) == 1, \
+                    f"Expected one physio file for session '{session}' and task '{task}', found {len(physio_files)}."
+                physio_df = self.load_physio(physio_files[0], normalize=normalize)
+                dataset['physio'].append(physio_df)
+                # load fMRI file
+                fmri_files = self.file_mapper.get_session_fmri_files(session, task, run=run, desc='preprocfinal')
+                assert len(fmri_files) == 1, \
+                    f"Expected one fMRI file for session '{session}' and task '{task}', found {len(fmri_files)}."
+                fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
+                dataset['fmri'].append(fmri_data)
+                # load event files
+                if has_events:
+                    event_files = self.file_mapper.get_session_event_files(session, task)
+                    event_df = self.events_to_df(
+                        fps_onset=[ef[0] for ef in event_files],
+                        fps_duration=[ef[1] for ef in event_files],
+                        conditions=conditions,
+                        task=task,
+                        session=session
+                    )
+                    dataset['events'].append(event_df)
 
         # concatenate data across sessions if requested
         if concatenate:
