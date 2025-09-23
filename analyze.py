@@ -43,7 +43,7 @@ TASKS = ['pinel', 'simon', 'rest', 'breathhold']
 # define tasks with event conditions
 TASKS_EVENT = ['pinel', 'simon']
 
-def main(subject, out_dir: str = OUT_DIRECTORY) -> None:
+def main(subject) -> None:
     # initialize dataset loader
     ds = Dataset(subject=subject)
     # perform GLM analyses
@@ -342,13 +342,5 @@ if __name__ == '__main__':
         required=True,
         help='Subject to perform analysis pipeline',
     )
-    parser.add_argument(
-        '-o',
-        '--out_dir',
-        type=str,
-        required=False,
-        help="output directory to save analysis outputs",
-        default=OUT_DIRECTORY
-    )
     args = parser.parse_args()
-    main(args.subject, args.out_dir)
+    main(args.subject)
