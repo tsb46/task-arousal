@@ -154,16 +154,41 @@ class Dataset:
 
             # loop through runs for session
             for run in runs_session:
+                if verbose and run is not None:
+                    print(f"    Loading run '{run}'...")
                 # load physio file
                 physio_files = self.file_mapper.get_session_physio_files(session, task, run=run, desc='preproc')
-                assert len(physio_files) == 1, \
-                    f"Expected one physio file for session '{session}' and task '{task}', found {len(physio_files)}."
+                # check if exactly one physio file is found
+                if len(physio_files) == 0:
+                    # in some scenarios, physio may not be recorded, skip loading
+                    if verbose:
+                        print(
+                            f"No physiological file found for session '{session}' and task "
+                            f"{task}' and run '{run if run is not None else ''}'."
+                        )
+                    continue
+                elif len(physio_files) > 1:
+                    raise ValueError(
+                        f"Multiple physiological files found for session '{session}' "
+                        f"and task '{task}' and run '{run if run is not None else ''}'."
+                    )
+                # load physio file into dataframe
                 physio_df = self.load_physio(physio_files[0], normalize=normalize)
                 dataset['physio'].append(physio_df)
                 # load fMRI file
                 fmri_files = self.file_mapper.get_session_fmri_files(session, task, run=run, desc='preprocfinal')
-                assert len(fmri_files) == 1, \
-                    f"Expected one fMRI file for session '{session}' and task '{task}', found {len(fmri_files)}."
+                # if no fMRI file is found, raise error
+                if len(fmri_files) == 0:
+                    raise ValueError(
+                        f"No fMRI file found for session '{session}' and task "
+                        f"'{task}' and run '{run if run is not None else ''}'."
+                    )
+                elif len(fmri_files) > 1:
+                    raise ValueError(
+                        f"Multiple fMRI files found for session '{session}' and task '{task}' and "
+                        f"run '{run if run is not None else ''}'."
+                    )
+                # load fMRI file into 2D array or 4D image
                 fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
                 dataset['fmri'].append(fmri_data)
                 # load event files
@@ -182,10 +207,14 @@ class Dataset:
         if concatenate:
             if verbose:
                 print("Concatenating data across sessions...")
-            # do not concatenate if not converted to 2d
+            
+            dataset['physio'] = [pd.concat(dataset['physio'], axis=0, ignore_index=True)]
+            # do not concatenate fmri data if not converted to 2d
             if convert_to_2d:
                 dataset['fmri'] = [np.concatenate(dataset['fmri'], axis=0)]
-            dataset['physio'] = [pd.concat(dataset['physio'], axis=0, ignore_index=True)]
+            else:
+                print("Warning: fmri data not concatenated because convert_to_2d is False.")
+            # only concatenate events if they exist
             if has_events:
                 dataset['events'] = [pd.concat(dataset['events'], axis=0, ignore_index=True)]
 
