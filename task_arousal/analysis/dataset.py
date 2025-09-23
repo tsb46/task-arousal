@@ -105,12 +105,12 @@ class Dataset:
         if task == 'pinel':
             conditions = PINEL_CONDITIONS
             has_events = True
-        elif task == 'breathhold':
-            conditions = []
-            has_events = False
         elif task == 'simon':
             conditions = SIMON_CONDITIONS
             has_events = True
+        elif task in ('breathhold', 'rest'):
+            conditions = []
+            has_events = False
         else:
             raise NotImplementedError(f"Conditions for task '{task}' are not defined.")
         # if sessions are provided, ensure it's a list
