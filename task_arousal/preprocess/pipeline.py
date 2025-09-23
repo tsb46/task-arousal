@@ -147,9 +147,11 @@ class PreprocessingPipeline:
                     file_entities = self.file_mapper.layout.parse_file_entities(physio_file[0])
                     matching_fmri_files = self.file_mapper.get_matching_files(file_entities, 'fmri')
                     if len(matching_fmri_files) == 0:
-                        raise ValueError(
-                            f"No matching fMRI file found for physiological file '{physio_file[0]}'."
-                        )
+                        # in some scenarios, physio may be recorded but no usable fMRI data
+                        if verbose:
+                            print(f"No matching fMRI file found for physiological file '{physio_file[0]}'.")
+                        continue
+                    
                     elif len(matching_fmri_files) > 1:
                         raise ValueError(
                             f"Multiple matching fMRI files found for physiological file '{physio_file[0]}'. "
