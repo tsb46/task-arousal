@@ -174,22 +174,28 @@ class Dataset:
                     )
                 # load physio file into dataframe
                 physio_df = self.load_physio(physio_files[0], normalize=normalize)
-                dataset['physio'].append(physio_df)
+            
                 # load fMRI file
                 fmri_files = self.file_mapper.get_session_fmri_files(session, task, run=run, desc='preprocfinal')
                 # if no fMRI file is found, raise error
                 if len(fmri_files) == 0:
-                    raise ValueError(
-                        f"No fMRI file found for session '{session}' and task "
-                        f"'{task}' and run '{run if run is not None else ''}'."
-                    )
+                    # in some scenarios, fmri may be missing or artifacts, skip loading
+                    if verbose:
+                        print(
+                            f"No fMRI file found for session '{session}' and task "
+                            f"'{task}' and run '{run if run is not None else ''}'."
+                        )
+                    continue
                 elif len(fmri_files) > 1:
+                    # raise error if multiple fMRI files are found
                     raise ValueError(
                         f"Multiple fMRI files found for session '{session}' and task '{task}' and "
                         f"run '{run if run is not None else ''}'."
                     )
                 # load fMRI file into 2D array or 4D image
                 fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
+                # append data to dataset
+                dataset['physio'].append(physio_df)
                 dataset['fmri'].append(fmri_data)
                 # load event files
                 if has_events:
