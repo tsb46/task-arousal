@@ -340,7 +340,10 @@ class Dataset:
         # apply mask to get 2D array (voxels x time points)
         fmri_data = apply_mask(fmri_img, self.mask)
         if normalize:
-            fmri_data = zscore(fmri_data, axis=0) 
+            fmri_data = zscore(fmri_data, axis=0)
+            # check that z-score did not introduce NaNs
+            if np.isnan(np.array(fmri_data)).any():
+                raise ValueError(f"NaN values found in fMRI data after z-scoring for file: {fp}")
         return fmri_data # type: ignore
 
     def to_4d(
