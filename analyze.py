@@ -43,50 +43,67 @@ TASKS = ['pinel', 'simon', 'rest', 'breathhold']
 # define tasks with event conditions
 TASKS_EVENT = ['pinel', 'simon']
 
-def main(subject) -> None:
+# define analyses to perform
+ANALYSES = [
+    'glm_event', 
+    'glm_physio', 
+    'dlm_physio', 
+    'dlm_event', 
+    'pca', 
+    'cpca'
+]
+
+def main(subject: str, analysis: str | None) -> None:
     # initialize dataset loader
     ds = Dataset(subject=subject)
-    # perform GLM analyses
-    print(f'Performing GLM analyses for subject {subject}')
-    # only perform GLM analyses for tasks with event conditions
-    for task in TASKS_EVENT:
-        print(f'Loading data for subject {subject}, task {task} for GLM analysis')
-        # load nifti images without conversion to 2d array for input to nilearn GLM analysis
-        data = ds.load_data(task=task, concatenate=False, convert_to_2d=False)
-        # perform GLM analysis with event regressors
-        _glm_event(data, ds, subject, task)
-        print(f'GLM analyses complete for subject {subject}, task {task}')
+    # if analysis is specified, only perform that analysis
+    if analysis is not None:
+        print(f'Performing only {analysis} analysis for subject {subject}')
+        _analysis = [analysis]
+    else:
+        _analysis = ANALYSES
 
-    # free up memory by deleting data
-    del data
-    print(f'Performing PCA, Complex PCA, and DLM analyses for subject {subject}')
-    # perform analyses that require concatenated data
-    for task in TASKS:
-        print(f'Loading concatenated data for subject {subject}, task {task}')
-        data = ds.load_data(task=task, concatenate=True)
-        # perform PCA analysis
-        _pca(data, ds, subject, task)
-        print(f'PCA analysis complete for subject {subject}, task {task}')
-        # perform Complex PCA analysis
-        _cpca(data, ds, subject, task)
-        print(f'Complex PCA analysis complete for subject {subject}, task {task}')
-        # perform DLM analysis with physiological regressors
-        _dlm_physio(data, ds, subject, task)
-        print(f'DLM with physiological regressors analysis complete for subject {subject}, task {task}')
+    # only perform GLM analyses for tasks with event conditions
+    if any(a in _analysis for a in ['glm_event']):
+        for task in TASKS_EVENT:
+            print(f'Loading data for subject {subject}, task {task} for GLM analysis')
+            # load nifti images without conversion to 2d array for input to nilearn GLM analysis
+            data = ds.load_data(task=task, concatenate=False, convert_to_2d=False)
+            # perform GLM analysis with event regressors
+            _glm_event(data, ds, subject, task)
+            print(f'GLM analyses complete for subject {subject}, task {task}')
     
-    # free up memory by deleting data
-    del data
-    # perform analyses that require non-concatenated data
+    # perform PCA, Complex PCA, and DLM analyses for all tasks
+    if any(a in _analysis for a in ['dlm_event', 'pca', 'cpca', 'dlm_physio']):
+        for task in TASKS:
+            print(f'Loading concatenated data for subject {subject}, task {task}')
+            data = ds.load_data(task=task, concatenate=True)
+            # perform PCA analysis
+            if 'pca' in _analysis:
+                _pca(data, ds, subject, task)
+                print(f'PCA analysis complete for subject {subject}, task {task}')
+            # perform Complex PCA analysis
+            if 'cpca' in _analysis:
+                _cpca(data, ds, subject, task)
+                print(f'Complex PCA analysis complete for subject {subject}, task {task}')
+            # perform DLM analysis with physiological regressors
+            if 'dlm_physio' in _analysis:
+                _dlm_physio(data, ds, subject, task)
+                print(f'DLM with physiological regressors analysis complete for subject {subject}, task {task}')
+
     # only perform DLM and GLM physio analyses for tasks with event conditions
-    for task in TASKS_EVENT:
-        print(f'Loading data for subject {subject}, task {task} for DLM with event and GLM with physio analyses')
-        data = ds.load_data(task=task, concatenate=False)
-        # perform DLM analysis with event regressors
-        _dlm_event(data, ds, subject, task)
-        print(f'DLM with event regressors analysis complete for subject {subject}, task {task}')
-        # perform GLM analysis with physiological regressors
-        _glm_physio(data, ds, subject, task)
-        print(f'GLM with physiological regressors analysis complete for subject {subject}, task {task}')
+    if any(a in _analysis for a in ['dlm_event', 'glm_physio']):
+        for task in TASKS_EVENT:
+            print(f'Loading data for subject {subject}, task {task} for DLM with event and GLM with physio analyses')
+            data = ds.load_data(task=task, concatenate=False)
+            if 'dlm_event' in _analysis:
+                # perform DLM analysis with event regressors
+                _dlm_event(data, ds, subject, task)
+                print(f'DLM with event regressors analysis complete for subject {subject}, task {task}')
+            if 'glm_physio' in _analysis:
+                # perform GLM analysis with physiological regressors
+                _glm_physio(data, ds, subject, task)
+                print(f'GLM with physiological regressors analysis complete for subject {subject}, task {task}')
     
     
 
@@ -109,12 +126,12 @@ def _cpca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     # estimate Complex PCA with 10 components
     cpca = ComplexPCA(n_components=10)
     # run Complex PCA decomposition
-    cpca_results = cpca.decompose(data['fmri'][0])
+    cpca_results = cpca.decompose(data['fmri'][0]) # type:ignore
     # write amplitude and phase of PC loadings to nifti file
     cpca_loadings_amp = ds.to_4d(cpca_results.loadings_amp.T)
     cpca_loadings_phase = ds.to_4d(cpca_results.loadings_phase.T)
-    nib.save(cpca_loadings_amp, f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_loadings_amp.nii.gz')
-    nib.save(cpca_loadings_phase, f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_loadings_phase.nii.gz')
+    nib.save(cpca_loadings_amp, f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_loadings_amp.nii.gz') # type:ignore
+    nib.save(cpca_loadings_phase, f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_loadings_phase.nii.gz') # type:ignore
     # write cpca metadata (including pc scores, exp var, etc.) to pickle file
     pickle.dump(
         cpca_results,
@@ -157,7 +174,7 @@ def _dlm_event(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     for condition in conditions:
         dlm_eval = dlm.evaluate(trial=condition)
         pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
-        nib.save(pred_func_img, f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_event_{condition}.nii.gz')
+        nib.save(pred_func_img, f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_event_{condition}.nii.gz') # type:ignore
 
         # write dlm metadata (including betas, t-stats, etc.) to pickle file
         pickle.dump(
@@ -197,7 +214,7 @@ def _dlm_physio(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None
         dlm_eval = dlm.evaluate()
         # write predicted functional time courses to nifti file
         pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
-        nib.save(pred_func_img, f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_physio_{physio_label}.nii.gz')
+        nib.save(pred_func_img, f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_physio_{physio_label}.nii.gz') # type:ignore
 
         # write dlm metadata (including betas, t-stats, etc.) to pickle file
         pickle.dump(
@@ -226,10 +243,10 @@ def _glm_event(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     print(f'Performing GLM with event regressors on subject {subject}, task {task}')
     # perform GLM analysis with 'spm' HRF model
     glm_spm = GLM(hrf='spm')
-    glm_spm_results = glm_spm.fit(event_df=data['events'], fmri=data['fmri'])
+    glm_spm_results = glm_spm.fit(event_df=data['events'], fmri=data['fmri']) # type: ignore
     # write contrast maps to nifti files
     for glm_map_name, glm_map in glm_spm_results.contrast_maps.items():
-        nib.save(glm_map, f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_hrf_contrast_{glm_map_name}.nii.gz')
+        nib.save(glm_map, f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_hrf_contrast_{glm_map_name}.nii.gz') # type:ignore
     # write glm metadata of HRF model (including contrasts, etc.) to pickle file
     pickle.dump(
         glm_spm_results,
@@ -238,10 +255,10 @@ def _glm_event(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
 
     # perform GLM analysis with 'fir' HRF model
     glm_fir = GLM(hrf='fir', fir_delays=np.arange(10)) # FIR with 10 TR delays
-    glm_fir_results = glm_fir.fit(event_df=data['events'], fmri=data['fmri'])
+    glm_fir_results = glm_fir.fit(event_df=data['events'], fmri=data['fmri']) # type: ignore
     # write contrast maps to nifti files
     for glm_map_name, glm_map in glm_fir_results.contrast_maps.items():
-        nib.save(glm_map, f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_fir_contrast_{glm_map_name}.nii.gz')
+        nib.save(glm_map, f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_fir_contrast_{glm_map_name}.nii.gz') # type:ignore
     # write glm metadata of FIR model (including contrasts, etc.) to pickle file
     pickle.dump(
         glm_fir_results,
@@ -290,7 +307,7 @@ def _glm_physio(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None
         for contrast_name in conditions:
             glm_eval = glm_physio.evaluate(contrast_name)
             pred_func_img = ds.to_4d(glm_eval.pred_func)
-            nib.save(
+            nib.save( # type: ignore
                 pred_func_img, 
                 f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_hrf_{physio_label}_contrast_{contrast_name}.nii.gz'
             )
@@ -320,10 +337,10 @@ def _pca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     # estimate PCA with 10 components
     pca = PCA(n_components=10)
     # run PCA decomposition
-    pca_results = pca.decompose(data['fmri'][0])
+    pca_results = pca.decompose(data['fmri'][0]) # type:ignore
     # write loadings to nifti file
     pca_loadings = ds.to_4d(pca_results.loadings.T)
-    nib.save(pca_loadings, f'{OUT_DIRECTORY}/sub-{subject}_{task}_pca_loadings.nii.gz')
+    nib.save(pca_loadings, f'{OUT_DIRECTORY}/sub-{subject}_{task}_pca_loadings.nii.gz') # type:ignore
     # write pca metadata (including pc scores, exp var, etc.) to pickle file
     pickle.dump(
         pca_results,
@@ -335,6 +352,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Perform full analysis pipeline on selected subject'
     )
+    # add subject argument
     parser.add_argument(
         '-s',
         '--subject',
@@ -342,5 +360,16 @@ if __name__ == '__main__':
         required=True,
         help='Subject to perform analysis pipeline',
     )
+    # add optional analysis argument (default: all analyses)
+    parser.add_argument(
+        '-a',
+        '--analysis',
+        type=str,
+        choices=ANALYSES,
+        required=False,
+        default=None,
+        help='Type of analysis to perform'
+    )
+    # parse arguments
     args = parser.parse_args()
-    main(args.subject)
+    main(args.subject, args.analysis)
