@@ -23,11 +23,24 @@ class PCAResults:
 
     explained_variance: np.ndarray
         the explained variance of the principal components
+    
+    U: np.ndarray
+        left singular vectors from fbpca
+
+    s: np.ndarray
+        singular values from fbpca
+
+    Va: np.ndarray
+        right singular vectors from fbpca
     """
 
     pc_scores: np.ndarray
     loadings: np.ndarray
     explained_variance: np.ndarray
+    U: np.ndarray
+    s: np.ndarray
+    Va: np.ndarray
+
 
 class PCA:
     """
@@ -77,7 +90,10 @@ class PCA:
         return PCAResults(
             pc_scores=pc_scores,
             loadings=loadings, 
-            explained_variance=explained_variance_
+            explained_variance=explained_variance_,
+            U=U,
+            s=s,
+            Va=Va
         )
     
     
