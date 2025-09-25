@@ -5,7 +5,7 @@ fMRI preprocessing is performed on outputs from fMRIPrep, including:
 
 1) Drop dummy volumes
 2) Detrending
-3) Band-pass filtering (0.01 - 0.4 Hz)
+3) Band-pass filtering (0.01 - 0.25 Hz)
 4) Standardize signal (z-score)
 5) Smoothing
 
@@ -288,7 +288,7 @@ def physio_pipeline(
     1) Resample to 50Hz (polyphase filtering to avoid aliasing)
     2) Feature extraction
     3) Resample to fMRI time points (low-pass filter to avoid aliasing, then interpolate)
-    4) Band-pass filtering to match fMRI bandpass (0.01 - 0.3)
+    4) Band-pass filtering to match fMRI bandpass (0.01 - 0.25 Hz)
     5) Standardization
 
     Parameters
