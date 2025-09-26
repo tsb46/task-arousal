@@ -374,6 +374,7 @@ def _pls(ds: Dataset, subject: str, task: str) -> None:
     data = ds.load_data(task=task, concatenate=True)
     # estimate PLS for each physio signal
     for physio_label in PHYSIO_LABELS:
+        print(f'Performing PLS with physiological regressor {physio_label}')
         # estimate PLS with 10 components
         pls = PLSEventPhysioModel(
             n_components=10,
