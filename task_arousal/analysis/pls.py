@@ -256,7 +256,8 @@ class PLSEventPhysioModel:
                 basis_type=self.basis_type
             ),
             pls=self.pls,
-            reg_col_labels=self.reg_col_labels
+            reg_col_labels=self.reg_col_labels,
+            trial_types=self.trial_types
         )
 
         # # Form pairwise latent interactions
