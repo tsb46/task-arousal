@@ -18,6 +18,9 @@ from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
     DistributedLagEventModel
 )
+from task_arousal.analysis.pls import (
+    PLSEventPhysioModel
+)
 from task_arousal.analysis.dataset import (
     Dataset, 
     DatasetLoad,
@@ -35,7 +38,8 @@ PHYSIO_LABELS = [
     'resp_amp',
     'resp_rate',
     'endtidal_co2',
-    'endtidal_o2'
+    'endtidal_o2',
+    'pls'
 ]
 # define all tasks (exclude Motor task)
 TASKS = ['pinel', 'simon', 'rest', 'breathhold']
@@ -92,7 +96,7 @@ def main(subject: str, analysis: str | None) -> None:
                 print(f'DLM with physiological regressors analysis complete for subject {subject}, task {task}')
 
     # only perform DLM and GLM physio analyses for tasks with event conditions
-    if any(a in _analysis for a in ['dlm_event', 'glm_physio']):
+    if any(a in _analysis for a in ['dlm_event', 'glm_physio', 'pls']):
         for task in TASKS_EVENT:
             print(f'Loading data for subject {subject}, task {task} for DLM with event and GLM with physio analyses')
             data = ds.load_data(task=task, concatenate=False)
@@ -104,6 +108,10 @@ def main(subject: str, analysis: str | None) -> None:
                 # perform GLM analysis with physiological regressors
                 _glm_physio(data, ds, subject, task)
                 print(f'GLM with physiological regressors analysis complete for subject {subject}, task {task}')
+            if 'pls' in _analysis:
+                # perform PLS analysis with event and physiological regressors
+                _pls(ds, subject, task)
+                print(f'PLS analysis complete for subject {subject}, task {task}')
     
     
 
@@ -346,6 +354,44 @@ def _pca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
         pca_results,
         open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_pca_metadata.pkl', 'wb')
     )
+
+def _pls(ds: Dataset, subject: str, task: str) -> None:
+    """
+    Perform PLS decomposition on fMRI data, events and physio signals,
+    and save results to files
+
+    Parameters
+    ----------
+    ds : Dataset
+        Dataset object for handling data operations
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    """
+    print(f'Performing PLS on subject {subject}, task {task}')
+    # load concatenated data
+    data = ds.load_data(task=task, concatenate=True)
+    # estimate PLS for each physio signal
+    for physio_label in PHYSIO_LABELS:
+        # estimate PLS with 10 components
+        pls = PLSEventPhysioModel(
+            n_components=10,
+            physio_lags=11,
+            regressor_duration=25.0,
+            n_knots_event=5,
+            n_knots_physio=5,
+        )    
+        pls_res = pls.fit(
+            event_dfs=data['events'],
+            fmri_data=data['fmri'], # type: ignore
+            physio_data=[d[physio_label].to_numpy()[:,np.newaxis] for d in data['physio']]
+        )
+        # write pls metadata (including pc scores, exp var, etc.) to pickle file
+        pickle.dump(
+            pls_res,
+            open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_{physio_label}_pls_metadata.pkl', 'wb')
+        )
 
 
 if __name__ == '__main__':
