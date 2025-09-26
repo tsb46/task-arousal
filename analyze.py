@@ -39,7 +39,6 @@ PHYSIO_LABELS = [
     'resp_rate',
     'endtidal_co2',
     'endtidal_o2',
-    'pls'
 ]
 # define all tasks (exclude Motor task)
 TASKS = ['pinel', 'simon', 'rest', 'breathhold']
@@ -54,7 +53,8 @@ ANALYSES = [
     'dlm_physio', 
     'dlm_event', 
     'pca', 
-    'cpca'
+    'cpca',
+    'pls'
 ]
 
 def main(subject: str, analysis: str | None) -> None:
