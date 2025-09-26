@@ -12,7 +12,7 @@ from scipy.interpolate import interp1d
 from sklearn.linear_model import Ridge
 
 from task_arousal.constants import TR, SLICE_TIMING_REF, EVENT_COLUMNS
-from task_arousal.analysis.utils import create_interaction_matrix, lag_mat
+from task_arousal.analysis.utils import create_interaction_matrix, lag_mat, boxcar
 
 # define the resampling of the event time course for boxcar function (in seconds)
 RESAMPLE_TR = 0.01 # seconds
@@ -429,7 +429,7 @@ class DistributedLagEventModel:
         for i, (event_df, outcome_d) in enumerate(zip(event_dfs, outcome_data)):
             n_vols = outcome_d.shape[0]
             # create boxcar event regressor resampled at RESAMPLE_TR
-            event_reg, frametimes, h_frametimes = _boxcar(
+            event_reg, frametimes, h_frametimes = boxcar(
                 event_df,
                 tr=TR,
                 resample_tr=RESAMPLE_TR,
@@ -654,7 +654,7 @@ class DistributedLagEventPhysioModel:
         for i, (event_df, outcome_d) in enumerate(zip(event_dfs, fmri_data)):
             n_vols = outcome_d.shape[0]
             # create boxcar event regressor resampled at RESAMPLE_TR
-            event_reg, frametimes, h_frametimes = _boxcar(
+            event_reg, frametimes, h_frametimes = boxcar(
                 event_df,
                 tr=TR,
                 resample_tr=RESAMPLE_TR,
@@ -815,85 +815,3 @@ class DistributedLagEventPhysioModel:
         )
         return dlm_pred
     
-
-
-def _boxcar(
-    event_df: pd.DataFrame, 
-    tr: float, 
-    resample_tr: float, 
-    n_vols: int, 
-    slicetime_ref: float, 
-    trial_types: List[str],
-    impulse_dur: float = 0.1
-) -> Tuple[List[np.ndarray], np.ndarray, np.ndarray]:
-    """Create a boxcar (rectangular) function time series.
-
-    Parameters:
-    ----------
-        event_df: pd.DataFrame
-            DataFrame with 'onset' and 'duration' columns.
-        tr: float
-            Repetition time of the fMRI scan (in seconds).
-        resample_tr: float
-            Time resolution for resampling the event time course (in seconds).
-        n_vols: int
-            Number of volumes in the fMRI scan.
-        slicetime_ref: float
-            Slice timing reference (in seconds).
-        trial_types: List[str]
-            List of unique trial types.
-        impulse_dur: float, optional
-            Duration of the boxcar impulse (in seconds). Defaults to 0.1.
-
-    Returns:
-    -------
-        trial_event_ts: List[np.ndarray]
-            List of arrays, each of shape (n_timepoints, 1) with boxcar functions for each trial type.
-        frametimes: np.ndarray
-            Time points of the original fMRI scan (in seconds).
-        h_frametimes: np.ndarray
-            Time points of the resampled fMRI scan (in seconds).
-    """
-    # get time samples of functional scan based on slicetime reference
-    frametimes = np.linspace(
-        slicetime_ref, 
-        (n_vols - 1 + slicetime_ref) * tr, 
-        n_vols
-    )
-
-    # Create index based on resampled tr
-    h_frametimes = np.arange(0, frametimes[-1]+1, resample_tr)
-
-    # loop through trial_types and create boxcar function
-    trial_event_ts = []
-    for trial_type in trial_types:
-        df_trial = event_df[event_df['trial_type'] == trial_type].copy()
-        # initialize zero vector for event time course
-        event_ts = np.zeros_like(h_frametimes).astype(np.float64)
-
-        # Grab onsets from event_df
-        onsets = df_trial['onset'].to_numpy()
-        # create unit impulses at event onsets
-        # initialize zero vector for event time course
-        event_ts = np.zeros_like(h_frametimes).astype(np.float64)
-        # maximum index for event time course
-        tmax = len(h_frametimes)
-        # Get samples nearest to onsets
-        t_onset = np.minimum(np.searchsorted(h_frametimes, onsets), tmax - 1)
-        for t in t_onset:
-            event_ts[t] = 1
-        # get samples nearest to offsets
-        t_offset = np.minimum(
-            np.searchsorted(h_frametimes, onsets + impulse_dur), 
-            tmax - 1
-        )
-        # fill in boxcar by setting samples between onset and offset to 1
-        for t in zip(t_offset):
-            event_ts[t] -= 1
-    
-        # cumulative sum to create boxcar function
-        event_ts = np.cumsum(event_ts)
-        trial_event_ts.append(event_ts.reshape(-1,1))
-
-    return trial_event_ts, frametimes, h_frametimes
-

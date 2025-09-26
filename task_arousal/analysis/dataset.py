@@ -69,11 +69,13 @@ class Dataset:
 
     def load_data(
         self, 
-        task: str, 
+        task: str,
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
         convert_to_2d: bool = True,
+        load_func: bool = True,
+        load_physio: bool = True,
         verbose: bool = True
     ) -> DatasetLoad:
         """
@@ -93,6 +95,10 @@ class Dataset:
             If convert_to_2d is False, this will be ignored. Default is True.
         convert_to_2d : bool, optional
             Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
+        load_func : bool, optional
+            Whether to load fMRI data. Default is True.
+        load_physio : bool, optional
+            Whether to load physiological data. Default is True.
         verbose : bool, optional
             Whether to print progress messages. Default is True.
         """
@@ -156,44 +162,58 @@ class Dataset:
             for run in runs_session:
                 if verbose and run is not None:
                     print(f"    Loading run '{run}'...")
-                # load physio file
-                physio_files = self.file_mapper.get_session_physio_files(session, task, run=run, desc='preproc')
-                # check if exactly one physio file is found
-                if len(physio_files) == 0:
-                    # in some scenarios, physio may not be recorded, skip loading
+                # load physio data if requested
+                if not load_physio:
                     if verbose:
-                        print(
-                            f"No physiological file found for session '{session}' and task "
-                            f"{task}' and run '{run if run is not None else ''}'."
-                        )
-                    continue
-                elif len(physio_files) > 1:
-                    raise ValueError(
-                        f"Multiple physiological files found for session '{session}' "
-                        f"and task '{task}' and run '{run if run is not None else ''}'."
+                        print("Skipping physio data loading...")
+                    physio_df = pd.DataFrame()
+                else:
+                    # load physio file
+                    physio_files = self.file_mapper.get_session_physio_files(
+                        session, task, run=run, desc='preproc'
                     )
-                # load physio file into dataframe
-                physio_df = self.load_physio(physio_files[0], normalize=normalize)
+                    # check if exactly one physio file is found
+                    if len(physio_files) == 0:
+                        # in some scenarios, physio may not be recorded, skip loading
+                        if verbose:
+                            print(
+                                f"No physiological file found for session '{session}' and task "
+                                f"{task}' and run '{run if run is not None else ''}'."
+                            )
+                        continue
+                    elif len(physio_files) > 1:
+                        raise ValueError(
+                            f"Multiple physiological files found for session '{session}' "
+                            f"and task '{task}' and run '{run if run is not None else ''}'."
+                        )
+                    # load physio file into dataframe
+                    physio_df = self.load_physio(physio_files[0], normalize=normalize)
             
                 # load fMRI file
-                fmri_files = self.file_mapper.get_session_fmri_files(session, task, run=run, desc='preprocfinal')
-                # if no fMRI file is found, raise error
-                if len(fmri_files) == 0:
-                    # in some scenarios, fmri may be missing or artifacts, skip loading
+                if not load_func:
                     if verbose:
-                        print(
-                            f"No fMRI file found for session '{session}' and task "
-                            f"'{task}' and run '{run if run is not None else ''}'."
+                        print("Skipping fMRI data loading...")
+                    fmri_data = np.array([])
+                else:
+                    fmri_files = self.file_mapper.get_session_fmri_files(session, task, run=run, desc='preprocfinal')
+                    # if no fMRI file is found, raise error
+                    if len(fmri_files) == 0:
+                        # in some scenarios, fmri may be missing or artifacts, skip loading
+                        if verbose:
+                            print(
+                                f"No fMRI file found for session '{session}' and task "
+                                f"'{task}' and run '{run if run is not None else ''}'."
+                            )
+                        continue
+                    elif len(fmri_files) > 1:
+                        # raise error if multiple fMRI files are found
+                        raise ValueError(
+                            f"Multiple fMRI files found for session '{session}' and task '{task}' and "
+                            f"run '{run if run is not None else ''}'."
                         )
-                    continue
-                elif len(fmri_files) > 1:
-                    # raise error if multiple fMRI files are found
-                    raise ValueError(
-                        f"Multiple fMRI files found for session '{session}' and task '{task}' and "
-                        f"run '{run if run is not None else ''}'."
-                    )
-                # load fMRI file into 2D array or 4D image
-                fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
+                    # load fMRI file into 2D array or 4D image
+                    fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
+                    
                 # append data to dataset
                 dataset['physio'].append(physio_df)
                 dataset['fmri'].append(fmri_data)
