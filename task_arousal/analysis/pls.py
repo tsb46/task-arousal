@@ -2,7 +2,7 @@
 Partial Least Squares regression analysis module.
 """
 from dataclasses import dataclass
-from typing import List, Literal
+from typing import Dict, List, Literal
 
 import pandas as pd
 import numpy as np
@@ -34,6 +34,8 @@ class PLSResults:
     pls: PLSRegression
     reg_col_labels: List[str]
     trial_types: List[str]
+    physio_labels: List[str]
+
 
 class PLSEventPhysioModel:
     """
@@ -101,7 +103,7 @@ class PLSEventPhysioModel:
         self, 
         event_dfs: List[pd.DataFrame], 
         fmri_data: List[np.ndarray],
-        physio_data: List[np.ndarray]
+        physio_data: Dict[str, List[np.ndarray]]
     ) -> PLSResults:
         """
         fit regression model of combined event and physio lag spline basis
@@ -129,12 +131,13 @@ class PLSEventPhysioModel:
         if len(event_dfs) != len(fmri_data):
             raise ValueError("event_dfs and fmri_data must have the same length")
         # check that event_dfs and physio_data have same length
-        if len(event_dfs) != len(physio_data):
+        if any(len(event_dfs) != len(physio_data[physio_label]) for physio_label in physio_data):
             raise ValueError("event_dfs and physio_data must have the same length")
         # check that physio_data have required shape
-        for i, physio in enumerate(physio_data):
-            if physio.ndim != 2 or physio.shape[1] != 1:
-                raise ValueError(f"Invalid shape for physio_data {i}: {physio.shape}")
+        for physio_label, physio in physio_data.items():
+            for i, physio_subj in enumerate(physio):
+                if physio_subj.ndim != 2 or physio_subj.shape[1] != 1:
+                    raise ValueError(f"Invalid shape for {physio_label} for index {i}: {physio_subj.shape}")
         # check that event_dfs have required columns
         for i, df in enumerate(event_dfs):
             if not all(col in df.columns for col in EVENT_COLUMNS):
@@ -207,26 +210,41 @@ class PLSEventPhysioModel:
             basis_type=self.basis_type # type: ignore
         )
         self.basis_physio.create(self.physio_lags, 0)
+        # get physio labels
+        self.physio_labels = list(physio_data.keys())
         # define physio regressor column names
-        physio_reg_cols = [
-            f"physio_lag_spline{n+1}"
-            for n in range(self.basis_physio.basis.shape[1])
-        ]
-        # create physio regressor for each session/run
+        physio_reg_cols = []
+        # loop through physio signals and project onto spline basis
         self.physio_regs = []
-        for i, physio_d in enumerate(physio_data):
-            if physio_d.shape[0] != fmri_data[i].shape[0]:
-                raise ValueError(f"physio_data {i} and fmri_data {i} must have the same number of time points")
-            # project physio signal lags on B-spline basis
-            physio_reg_proj = self.basis_physio.project(physio_d, fill_val=0.0)
-            self.physio_regs.append(physio_reg_proj)
+        for physio_label in self.physio_labels:
+            physio_d = physio_data[physio_label]
 
+            # extend physio regressor column names
+            physio_reg_cols.extend([
+                f"physio_{physio_label}_lag_spline{n+1}"
+                for n in range(self.basis_physio.basis.shape[1])
+            ])
+            # create physio regressor for each session/run
+            physio_regs_session = []
+            for i, physio_d in enumerate(physio_data[physio_label]):
+                if physio_d.shape[0] != fmri_data[i].shape[0]:
+                    raise ValueError(
+                        f"physio data {physio_label}, index {i} and fmri_data {i} must have the same"
+                         " number of time points"
+                    )
+                # project physio signal lags on B-spline basis
+                physio_reg_proj = self.basis_physio.project(physio_d, fill_val=0.0)
+                physio_regs_session.append(physio_reg_proj)
+
+            # conctatenate physio regressors across sessions/runs
+            self.physio_regs.append(np.vstack(physio_regs_session))
+        
+        # concatenate physio regressors across physio signals
+        physio_regs_concat = np.hstack(self.physio_regs)
         # concatenate fmri data across sessions/runs
         fmri_concat = np.vstack(fmri_data)
         # concatenate event regressors across sessions/runs
         event_regs_concat = np.vstack(self.event_regs)
-        # concatenate physio regressors across sessions/runs
-        physio_regs_concat = np.vstack(self.physio_regs)
 
         # concatenate all regressors
         all_regs_concat = np.hstack((
@@ -257,7 +275,8 @@ class PLSEventPhysioModel:
             ),
             pls=self.pls,
             reg_col_labels=self.reg_col_labels,
-            trial_types=self.trial_types
+            trial_types=self.trial_types,
+            physio_labels=self.physio_labels
         )
 
         # # Form pairwise latent interactions

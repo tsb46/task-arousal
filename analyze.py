@@ -110,7 +110,7 @@ def main(subject: str, analysis: str | None) -> None:
                 print(f'GLM with physiological regressors analysis complete for subject {subject}, task {task}')
             if 'pls' in _analysis:
                 # perform PLS analysis with event and physiological regressors
-                _pls(ds, subject, task)
+                _pls(data, ds, subject, task)
                 print(f'PLS analysis complete for subject {subject}, task {task}')
     
     
@@ -355,13 +355,15 @@ def _pca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
         open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_pca_metadata.pkl', 'wb')
     )
 
-def _pls(ds: Dataset, subject: str, task: str) -> None:
+def _pls(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     """
     Perform PLS decomposition on fMRI data, events and physio signals,
     and save results to files
 
     Parameters
     ----------
+    data : DatasetLoad
+        Loaded dataset containing fMRI data and associated information
     ds : Dataset
         Dataset object for handling data operations
     subject : str
@@ -370,29 +372,29 @@ def _pls(ds: Dataset, subject: str, task: str) -> None:
         Task identifier
     """
     print(f'Performing PLS on subject {subject}, task {task}')
-    # load concatenated data
-    data = ds.load_data(task=task, concatenate=True)
     # estimate PLS for each physio signal
-    for physio_label in PHYSIO_LABELS:
-        print(f'Performing PLS with physiological regressor {physio_label}')
-        # estimate PLS with 10 components
-        pls = PLSEventPhysioModel(
-            n_components=10,
-            physio_lags=11,
-            regressor_duration=25.0,
-            n_knots_event=5,
-            n_knots_physio=5,
-        )    
-        pls_res = pls.fit(
-            event_dfs=data['events'],
-            fmri_data=data['fmri'], # type: ignore
-            physio_data=[d[physio_label].to_numpy()[:,np.newaxis] for d in data['physio']]
-        )
-        # write pls metadata (including pc scores, exp var, etc.) to pickle file
-        pickle.dump(
-            pls_res,
-            open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_{physio_label}_pls_metadata.pkl', 'wb')
-        )
+    print('Performing PLS with physiological and event regressors')
+    # estimate PLS with 10 components
+    pls = PLSEventPhysioModel(
+        n_components=10,
+        physio_lags=11,
+        regressor_duration=25.0,
+        n_knots_event=5,
+        n_knots_physio=5,
+    )    
+    pls_res = pls.fit(
+        event_dfs=data['events'],
+        fmri_data=data['fmri'], # type: ignore
+        physio_data={
+            physio_label: [d[physio_label].to_numpy()[:,np.newaxis] for d in data['physio']]
+            for physio_label in PHYSIO_LABELS
+        }
+    )
+    # write pls metadata (including pc scores, exp var, etc.) to pickle file
+    pickle.dump(
+        pls_res,
+        open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_pls_metadata.pkl', 'wb')
+    )
 
 
 if __name__ == '__main__':
