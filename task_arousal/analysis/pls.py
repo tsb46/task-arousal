@@ -35,6 +35,8 @@ class PLSResults:
     reg_col_labels: List[str]
     trial_types: List[str]
     physio_labels: List[str]
+    physio_basis: BSplineLagBasis
+    event_basis: BSplineLagBasis
 
 
 class PLSEventPhysioModel:
@@ -276,7 +278,9 @@ class PLSEventPhysioModel:
             pls=self.pls,
             reg_col_labels=self.reg_col_labels,
             trial_types=self.trial_types,
-            physio_labels=self.physio_labels
+            physio_labels=self.physio_labels,
+            physio_basis=self.basis_physio,
+            event_basis=self.basis_event
         )
 
         # # Form pairwise latent interactions
