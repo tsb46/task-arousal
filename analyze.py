@@ -355,6 +355,7 @@ def _pca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
         open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_pca_metadata.pkl', 'wb')
     )
 
+
 def _pls(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     """
     Perform PLS decomposition on fMRI data, events and physio signals,
@@ -372,8 +373,6 @@ def _pls(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
         Task identifier
     """
     print(f'Performing PLS on subject {subject}, task {task}')
-    # estimate PLS for each physio signal
-    print('Performing PLS with physiological and event regressors')
     # estimate PLS with 10 components
     pls = PLSEventPhysioModel(
         n_components=10,
