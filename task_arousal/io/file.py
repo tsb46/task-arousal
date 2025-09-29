@@ -1,6 +1,9 @@
 """
 Class for iterating over subject fMRI and physio data files
 """
+import re
+import warnings
+
 from pathlib import Path
 from typing import List, Tuple, Literal
 
@@ -34,11 +37,16 @@ class FileMapper:
         directory to the FMRIPrep derivatives folder to ensure that the FileMapper
         can find them.
         """
+        # create ignore pattern for other subjects to speed up layout initialization
+        ignore_pattern = re.compile(f"(sub-(?!{self.subject}).*/)")
         # The BIDSLayout initialization can be slow, especially for large datasets
-        if IS_DERIVED:
-            self.layout = BIDSLayout(DATA_DIRECTORY, is_derivative=True)
-        else:
-            self.layout = BIDSLayout(DATA_DIRECTORY, derivatives=True)
+        with warnings.catch_warnings():
+            # suppress warnings about soon-to-be-deprecated ignore parameter
+            warnings.simplefilter("ignore")
+            if IS_DERIVED:
+                self.layout = BIDSLayout(DATA_DIRECTORY, is_derivative=True, ignore=[ignore_pattern])
+            else:
+                self.layout = BIDSLayout(DATA_DIRECTORY, derivatives=True, ignore=[ignore_pattern])
 
         # get available subjects in the dataset
         self.available_subjects = self.layout.get_subjects()
