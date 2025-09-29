@@ -77,7 +77,8 @@ def extract_resp_co2_features(
 ) -> dict[str, np.ndarray]:
     """
     Extract end-tidal CO2 waveforms from raw
-    CO2 recordings through peak detection and interpolation
+    CO2 recordings through peak detection and interpolation. Note,
+    end-tidal CO2 is extracted from the maxima of the CO2 signal.
 
     Parameters
     ----------
@@ -122,7 +123,9 @@ def extract_resp_o2_features(
 ) -> dict[str, np.ndarray]:
     """
     Extract end-tidal O2 waveforms from raw
-    O2 recordings through peak detection and interpolation
+    O2 recordings through peak detection and interpolation. Note,
+    end-tidal O2 is extracted from the minima of the O2 signal, as
+    opposed to the maxima for CO2.
 
     Parameters
     ----------
@@ -145,7 +148,9 @@ def extract_resp_o2_features(
         method='butterworth',
         order=4,
     )
-    # find peaks (end-tidal O2 points)
+    # invert signal to find minima as peaks
+    ts_filt = np.array(ts_filt) * -1
+    # find minima (end-tidal O2 points)
     o2_peaks, peaks_info = find_peaks(
         ts_filt,
         height=np.percentile(ts_filt, 50),  # only consider peaks above 50th percentile
