@@ -279,8 +279,8 @@ class PLSEventPhysioModel:
             reg_col_labels=self.reg_col_labels,
             trial_types=self.trial_types,
             physio_labels=self.physio_labels,
-            physio_basis=np.array(self.basis_physio),
-            event_basis=np.array(self.basis_event)
+            physio_basis=np.array(self.basis_physio.basis),
+            event_basis=np.array(self.basis_event.basis)
         )
 
         # # Form pairwise latent interactions
