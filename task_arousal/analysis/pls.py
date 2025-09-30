@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 
 from scipy.interpolate import interp1d
-from sklearn.cross_decomposition import PLSRegression
+from mbpls.mbpls import MBPLS
 from scipy.stats import zscore
 
 from task_arousal.constants import TR, SLICE_TIMING_REF, EVENT_COLUMNS
@@ -31,8 +31,9 @@ class PLSParams:
 @dataclass
 class PLSResults:
     pls_params: PLSParams
-    pls: PLSRegression
-    reg_col_labels: List[str]
+    pls: MBPLS
+    physio_col_labels: List[str]
+    event_col_labels: List[str]
     trial_types: List[str]
     physio_labels: List[str]
     physio_basis: np.ndarray
@@ -164,7 +165,7 @@ class PLSEventPhysioModel:
                 raise ValueError(f"Event dataframe {i} has different trial types than the first dataframe")
         
         # create column names for event regressors
-        event_reg_cols = [
+        self.event_reg_cols = [
             f"{trial}_lag_spline{n+1}"
             for trial in self.trial_types
             for n in range(self.basis_event.basis.shape[1])
@@ -215,14 +216,14 @@ class PLSEventPhysioModel:
         # get physio labels
         self.physio_labels = list(physio_data.keys())
         # define physio regressor column names
-        physio_reg_cols = []
+        self.physio_reg_cols = []
         # loop through physio signals and project onto spline basis
         self.physio_regs = []
         for physio_label in self.physio_labels:
             physio_d = physio_data[physio_label]
 
             # extend physio regressor column names
-            physio_reg_cols.extend([
+            self.physio_reg_cols.extend([
                 f"physio_{physio_label}_lag_spline{n+1}"
                 for n in range(self.basis_physio.basis.shape[1])
             ])
@@ -248,23 +249,16 @@ class PLSEventPhysioModel:
         # concatenate event regressors across sessions/runs
         event_regs_concat = np.vstack(self.event_regs)
 
-        # concatenate all regressors
-        all_regs_concat = np.hstack((
-            event_regs_concat,
-            physio_regs_concat,
-        ))
-        # define all regressor column names
-        self.reg_col_labels = event_reg_cols + physio_reg_cols
-
         # z-score all regressors
-        all_regs_concat = np.array(zscore(all_regs_concat, axis=0))
+        event_regs_concat = np.array(zscore(event_regs_concat, axis=0))
+        physio_regs_concat = np.array(zscore(physio_regs_concat, axis=0))
 
         # fit PLS regression model
-        self.pls = PLSRegression(n_components=self.n_components)
+        self.pls = MBPLS(n_components=self.n_components, max_tol=1e-6, full_svd=False)
         self.pls.fit(
-            all_regs_concat,
-            fmri_concat
-        )
+            [event_regs_concat, physio_regs_concat],
+            fmri_concat,
+        )        
 
         return PLSResults(
             pls_params=PLSParams(
@@ -276,7 +270,8 @@ class PLSEventPhysioModel:
                 basis_type=self.basis_type
             ),
             pls=self.pls,
-            reg_col_labels=self.reg_col_labels,
+            physio_col_labels=self.physio_reg_cols,
+            event_col_labels=self.event_reg_cols,
             trial_types=self.trial_types,
             physio_labels=self.physio_labels,
             physio_basis=np.array(self.basis_physio.basis),
