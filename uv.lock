@@ -447,6 +447,21 @@ wheels = [
 ]
 
 [[package]]
+name = "mbpls"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b3/70/073ad2a35586a84740776c141aceb174b9010a6953bdd8875a6a701d6018/mbpls-1.0.4.tar.gz", hash = "sha256:1ca5ae20c9ad8965fed511141488840a309accbb292de7eab1b53a0f816765df", size = 21404, upload-time = "2020-01-14T21:24:58.435Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ae/be/9a2e529591ac67b9df9506bb0429acbea927c59e165f24c168a443747f00/mbpls-1.0.4-py3-none-any.whl", hash = "sha256:3f389929f04da086c086b11c30d9101edd9c19375ac3ec5b3ae1d43deed43824", size = 24903, upload-time = "2020-01-14T21:24:56.329Z" },
+]
+
+[[package]]
 name = "narwhals"
 version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -956,6 +971,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fbpca" },
     { name = "matplotlib" },
+    { name = "mbpls" },
     { name = "neurokit2" },
     { name = "nibabel" },
     { name = "nilearn" },
@@ -970,6 +986,7 @@ dependencies = [
 requires-dist = [
     { name = "fbpca", specifier = ">=1.0" },
     { name = "matplotlib", specifier = ">=3.10.6" },
+    { name = "mbpls", specifier = ">=1.0.4" },
     { name = "neurokit2", specifier = ">=0.2.12" },
     { name = "nibabel", specifier = ">=5.3.2" },
     { name = "nilearn", specifier = ">=0.12.0" },
