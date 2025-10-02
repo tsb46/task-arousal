@@ -25,7 +25,7 @@ class PLSParams:
     physio_lags: int
     regressor_duration: float
     n_knots_event: int
-    n_physio_knots: int
+    n_knots_physio: int
     basis_type: str
 
 @dataclass
@@ -109,7 +109,7 @@ class PLSEventPhysioModel:
         physio_data: Dict[str, List[np.ndarray]]
     ) -> PLSResults:
         """
-        fit regression model of combined event and physio lag spline basis
+        fit PLS model of combined event and physio lag spline basis
         regressed on functional time courses.
 
         Parameters
@@ -257,8 +257,8 @@ class PLSEventPhysioModel:
         self.pls = MBPLS(n_components=self.n_components, max_tol=1e-6, full_svd=False)
         self.pls.fit(
             [event_regs_concat, physio_regs_concat],
-            fmri_concat,
-        )        
+            fmri_concat
+        ) 
 
         return PLSResults(
             pls_params=PLSParams(
@@ -266,7 +266,7 @@ class PLSEventPhysioModel:
                 physio_lags=self.physio_lags,
                 regressor_duration=self.regressor_duration,
                 n_knots_event=self.n_knots_event,
-                n_physio_knots=self.n_knots_physio,
+                n_knots_physio=self.n_knots_physio,
                 basis_type=self.basis_type
             ),
             pls=self.pls,
@@ -277,20 +277,3 @@ class PLSEventPhysioModel:
             physio_basis=np.array(self.basis_physio.basis),
             event_basis=np.array(self.basis_event.basis)
         )
-
-        # # Form pairwise latent interactions
-        # T = self.pls.x_scores_
-        # latent_interactions = []
-        # names_inter = []
-        # for i in range(T.shape[1]):
-        #     for j in range(i, T.shape[1]):
-        #         latent_interactions.append(T[:, i] * T[:, j])
-        #         names_inter.append(f"T{i}_x_T{j}")
-        # Z = np.column_stack([T] + latent_interactions)
-
-        # # scale Z
-        # Z = np.array(zscore(Z, axis=0))
-        # # Second-stage PLS or linear model predicting y from Z
-        # pls2 = PLSRegression(n_components=min(5, Z.shape[1])) 
-        # pls2.fit(Z, fmri_concat)
-        # return self
