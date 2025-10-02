@@ -21,6 +21,9 @@ from task_arousal.analysis.dlm import (
 from task_arousal.analysis.pls import (
     PLSEventPhysioModel
 )
+from task_arousal.analysis.rrr import (
+    RRREventPhysioModel
+)
 from task_arousal.analysis.dataset import (
     Dataset, 
     DatasetLoad,
@@ -54,7 +57,8 @@ ANALYSES = [
     'dlm_event', 
     'pca', 
     'cpca',
-    'pls'
+    'pls',
+    'rrr',
 ]
 
 def main(subject: str, analysis: str | None) -> None:
@@ -96,7 +100,7 @@ def main(subject: str, analysis: str | None) -> None:
                 print(f'DLM with physiological regressors analysis complete for subject {subject}, task {task}')
 
     # only perform DLM and GLM physio analyses for tasks with event conditions
-    if any(a in _analysis for a in ['dlm_event', 'glm_physio', 'pls']):
+    if any(a in _analysis for a in ['dlm_event', 'glm_physio', 'pls', 'rrr']):
         for task in TASKS_EVENT:
             print(f'Loading data for subject {subject}, task {task} for DLM with event and GLM with physio analyses')
             data = ds.load_data(task=task, concatenate=False)
@@ -112,8 +116,11 @@ def main(subject: str, analysis: str | None) -> None:
                 # perform PLS analysis with event and physiological regressors
                 _pls(data, ds, subject, task)
                 print(f'PLS analysis complete for subject {subject}, task {task}')
-    
-    
+            if 'rrr' in _analysis:
+                # perform RRR analysis with event and physiological regressors
+                _rrr(data, ds, subject, task)
+                print(f'RRR analysis complete for subject {subject}, task {task}')
+
 
 def _cpca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     """
@@ -393,6 +400,46 @@ def _pls(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     pickle.dump(
         pls_res,
         open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_pls_metadata.pkl', 'wb')
+    )
+
+
+def _rrr(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
+    """
+    Perform Reduced Rank Regression on fMRI data, events and physio signals,
+    and save results to files
+
+    Parameters
+    ----------
+    data : DatasetLoad
+        Loaded dataset containing fMRI data and associated information
+    ds : Dataset
+        Dataset object for handling data operations
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    """
+    print(f'Performing RRR on subject {subject}, task {task}')
+    # estimate RRR with 10 components
+    rrr = RRREventPhysioModel(
+        n_components=10,
+        physio_lags=11,
+        regressor_duration=25.0,
+        n_knots_event=5,
+        n_knots_physio=5,
+    )
+    rrr_res = rrr.fit(
+        event_dfs=data['events'],
+        fmri_data=data['fmri'], # type: ignore
+        physio_data={
+            physio_label: [d[physio_label].to_numpy()[:,np.newaxis] for d in data['physio']]
+            for physio_label in PHYSIO_LABELS
+        }
+    )
+    # write rrr metadata (including pc scores, exp var, etc.) to pickle file
+    pickle.dump(
+        rrr_res,
+        open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_rrr_metadata.pkl', 'wb')
     )
 
 
