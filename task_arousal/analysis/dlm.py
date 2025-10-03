@@ -2,17 +2,18 @@
 Distributed lag modeling of physio signals, events, and fMRI data
 """
 from dataclasses import dataclass
-from typing import List, Literal, Tuple
+from typing import Dict, List, Literal
 
 import numpy as np
 import pandas as pd
 
 from patsy import dmatrix # type: ignore
 from scipy.interpolate import interp1d
-from sklearn.linear_model import Ridge
+from sklearn.metrics import r2_score
+from sklearn.linear_model import Ridge, LinearRegression
 
 from task_arousal.constants import TR, SLICE_TIMING_REF, EVENT_COLUMNS
-from task_arousal.analysis.utils import create_interaction_matrix, lag_mat, boxcar
+from task_arousal.analysis.utils import lag_mat, boxcar
 
 # define the resampling of the event time course for boxcar function (in seconds)
 RESAMPLE_TR = 0.01 # seconds
@@ -34,19 +35,20 @@ class DLMPredResults:
 
 # dataclass for storing DLM interaction model parameters
 @dataclass
-class DLMInteractionParams:
+class DLMCAParams:
     event_lags: np.ndarray
-    physio_lag: int
-    physio_val: List[float]
-    n_eval: int
+    physio_lags: int
+    regressor_duration: float
+    n_knots_event: int
+    n_knots_physio: int
     basis_type: str
 
 @dataclass
-class DLMInteractionPredResults:
+class DLMCAResults:
     # store prediction results at each value of physio signal
     pred_outcome: List[np.ndarray]
     trial: str
-    dlm_params: DLMInteractionParams
+    dlm_params: DLMCAParams
 
 
 class BSplineLagBasis:
@@ -534,12 +536,11 @@ class DistributedLagEventModel:
         return dlm_pred
 
 
-class DistributedLagEventPhysioModel:
+class DistributedLagCommonalityAnalysis:
     """
-    Distributed lag model of task events and physio signals, and their interactions,
-    regressed onto functional MRI time courses. This model is meant to estimate the 
-    difference in the hemodynamic response to task events as a function of the
-    level of a physio signal (e.g., CO2, heart rate, etc.). 
+    Partitioning of the unique and common variance in functional MRI time courses explained by
+    task events and physio signals. Task events and physio signals and their lags are projected
+    on a B-spline basis and regressed onto functional MRI signals at each voxel (mass-univariate).
 
     Attributes
     ----------
@@ -570,23 +571,27 @@ class DistributedLagEventPhysioModel:
     """
     def __init__(
         self,
-        physio_lag: int = 5,
+        physio_lags: int = 10,
         regressor_duration: float = 20.0,
         n_knots_event: int = 5,
+        n_knots_physio: int = 5,
+        physio_knots: List[int] | None = None,
         event_knots: List[int] | None = None,
-        basis: Literal['cr','bs'] = 'bs'
+        basis: Literal['cr','bs'] = 'cr'
     ):
-        self.physio_lag = physio_lag
+        self.physio_lags = physio_lags
         self.regressor_duration = regressor_duration
         self.n_knots_event = n_knots_event
+        self.n_knots_physio = n_knots_physio
         self.event_knots = event_knots
+        self.physio_knots = physio_knots
         self.basis_type = basis
 
     def fit(
         self, 
         event_dfs: List[pd.DataFrame], 
         fmri_data: List[np.ndarray],
-        physio_data: List[np.ndarray]
+        physio_data: Dict[str, List[np.ndarray]]
     ):
         """
         fit regression model of combined event and physio lag spline basis
@@ -600,9 +605,9 @@ class DistributedLagEventPhysioModel:
             List of fMRI 2D datasets (2D - time x voxels).
             This should be in the same order as event_dfs (i.e., fmri_data[i] corresponds to event_dfs[i]).
             This should not be concatenated data across runs/sessions.
-        physio_data: List[np.ndarray]
-            List of physio signal (2D - time x 1).
-            This should be in the same order as event_dfs (i.e., physio_data[i] corresponds to event_dfs[i]).
+        physio_data: Dict[str, List[np.ndarray]]
+            Dictionary of physio signal (2D - time x 1) arrays, keyed by physio label.
+            This should be in the same order as event_dfs (i.e., physio_data[physio_label][i] corresponds to event_dfs[i]).
             This should not be concatenated data across runs/sessions.
 
         Returns
@@ -614,12 +619,13 @@ class DistributedLagEventPhysioModel:
         if len(event_dfs) != len(fmri_data):
             raise ValueError("event_dfs and fmri_data must have the same length")
         # check that event_dfs and physio_data have same length
-        if len(event_dfs) != len(physio_data):
+        if any(len(event_dfs) != len(physio_data[physio_label]) for physio_label in physio_data):
             raise ValueError("event_dfs and physio_data must have the same length")
         # check that physio_data have required shape
-        for i, physio in enumerate(physio_data):
-            if physio.ndim != 2 or physio.shape[1] != 1:
-                raise ValueError(f"Invalid shape for physio_data {i}: {physio.shape}")
+        for physio_label, physio in physio_data.items():
+            for i, physio_subj in enumerate(physio):
+                if physio_subj.ndim != 2 or physio_subj.shape[1] != 1:
+                    raise ValueError(f"Invalid shape for {physio_label} for index {i}: {physio_subj.shape}")
         # check that event_dfs have required columns
         for i, df in enumerate(event_dfs):
             if not all(col in df.columns for col in EVENT_COLUMNS):
@@ -685,133 +691,104 @@ class DistributedLagEventPhysioModel:
             # create design matrix by concatenating trial event regressors
             event_regs_trial = np.hstack(events_regs_trial)
             self.event_regs.append(event_regs_trial)
+        
+        # create B-spline basis across lags of physio signal
+        self.basis_physio = BSplineLagBasis(
+            n_knots=self.n_knots_physio, knots=self.physio_knots, 
+            basis_type=self.basis_type # type: ignore
+        )
+        self.basis_physio.create(self.physio_lags, 0)
+        # get physio labels
+        self.physio_labels = list(physio_data.keys())
+        # define physio regressor column names
+        self.physio_reg_cols = []
+        # loop through physio signals and project onto spline basis
+        self.physio_regs = []
+        for physio_label in self.physio_labels:
+            physio_d = physio_data[physio_label]
 
+            # extend physio regressor column names
+            self.physio_reg_cols.extend([
+                f"physio_{physio_label}_lag_spline{n+1}"
+                for n in range(self.basis_physio.basis.shape[1])
+            ])
+            # create physio regressor for each session/run
+            physio_regs_session = []
+            for i, physio_d in enumerate(physio_data[physio_label]):
+                if physio_d.shape[0] != fmri_data[i].shape[0]:
+                    raise ValueError(
+                        f"physio data {physio_label}, index {i} and fmri_data {i} must have the same"
+                         " number of time points"
+                    )
+                # project physio signal lags on B-spline basis
+                physio_reg_proj = self.basis_physio.project(physio_d, fill_val=0.0)
+                physio_regs_session.append(physio_reg_proj)
+
+            # conctatenate physio regressors across sessions/runs
+            self.physio_regs.append(np.vstack(physio_regs_session))
+        
+        # concatenate physio regressors across physio signals
+        physio_regs_concat = np.hstack(self.physio_regs)
         # concatenate fmri data across sessions/runs
         fmri_concat = np.vstack(fmri_data)
         # concatenate event regressors across sessions/runs
         event_regs_concat = np.vstack(self.event_regs)
-        # concatenate physio regressors across sessions/runs
-        # create lagged physio regressors for each session/run
-        physio_regs = [lag_mat(physio_d, [self.physio_lag], fill_val=0) for physio_d in physio_data]
-        physio_regs_concat = np.vstack(physio_regs)
-        # create interaction matrix between event and physio regressors
-        interaction_regs_concat = create_interaction_matrix(
-            event_regs_concat,
-            physio_regs_concat
-        )
-        # concatenate all regressors
-        all_regs_concat = np.hstack((
-            event_regs_concat,
-            physio_regs_concat,
-            interaction_regs_concat
-        ))
 
-        # fit Ridge regression model
-        self.glm = Ridge(fit_intercept=False, alpha=1.0)
-        self.glm.fit(
+        # concatenate event and physio regressors
+        all_regs_concat = np.hstack([event_regs_concat, physio_regs_concat])
+
+        # concatenate all colulmn labels
+        self.all_reg_cols = self.event_reg_cols + self.physio_reg_cols
+
+        # estimate total variance explained
+        self.glm_full = LinearRegression(fit_intercept=False)
+        self.glm_full.fit(
             X=all_regs_concat,
             y=fmri_concat
         )
+        pred_fmri = self.glm_full.predict(
+            X=all_regs_concat
+        )
+        self.r2_full = r2_score(
+            y_true=fmri_concat,
+            y_pred=pred_fmri,
+            multioutput='raw_values'
+        )
+
+        # estimate variance explained by event regressors only
+        self.glm_event = LinearRegression(fit_intercept=False)
+        self.glm_event.fit(
+            X=event_regs_concat,
+            y=fmri_concat
+        )
+        fmri_pred = self.glm_event.predict(X=event_regs_concat)
+        self.r2_event = r2_score(
+            y_true=fmri_concat,
+            y_pred=fmri_pred,
+            multioutput='raw_values'
+        )
+        # estimate variance explained by physio regressors only
+        self.glm_physio = LinearRegression(fit_intercept=False)
+        self.glm_physio.fit(
+            X=physio_regs_concat,
+            y=fmri_concat
+        )
+        pred_fmri = self.glm_physio.predict(X=physio_regs_concat)
+        self.r2_physio = r2_score(
+            y_true=fmri_concat,
+            y_pred=pred_fmri,
+            multioutput='raw_values'
+        )
+        # estimate unique variance explained by event regressors
+        self.r2_event_unique = (
+            self.r2_full - self.r2_physio
+        )
+        # estimate unique variance explained by physio regressors
+        self.r2_physio_unique = (
+            self.r2_full - self.r2_event
+        )
+        # estimate the common variance explained by event and physio regressors
+        self.r2_common = (
+            self.r2_full - self.r2_event_unique - self.r2_physio_unique
+        )
         return self
-
-    def evaluate(
-        self,
-        trial: str,
-        physio_val_min = -2.0,
-        physio_val_max = 2.0,
-        physio_val_steps = 10,
-        n_eval: int = 30,
-    ) -> DLMInteractionPredResults:
-        """
-        Evaluate model predictions for a specific trial type.
-
-        Parameters
-        ----------
-        trial: str
-            The trial type to evaluate the model for. Must be one of the
-            trial types used in the model fitting.
-        physio_lag: int
-            The lag of the physio signal to evaluate the model for. This should
-            be between 0 and n_lags_physio specified in initialization.
-        physio_val_min: float
-            Minimum value of the physio signal to evaluate the model for.
-            (default: -2.0)
-        physio_val_max: float
-            Maximum value of the physio signal to evaluate the model for.
-            (default: 2.0)
-        physio_val_steps: int
-            Number of steps between physio_val_min and physio_val_max to evaluate
-            the model for. (default: 10)
-        n_eval: int
-            Number of samples between the event onset and max_duration for 
-            the predicted functional time course or physio signal.
-
-        Returns
-        -------
-        dlm_pred: DistributedLagModelPredResults
-            Container object for distribued lag model prediction results
-        """
-        # fixed prediction value for event regressor
-        PRED_EVENT_VAL = 4.0
-        # check that trial is in trial_types
-        if trial not in self.trial_types:
-            raise ValueError(f"trial must be one of {self.trial_types}")
-        
-        # create array of physio values to evaluate
-        physio_val = np.linspace(physio_val_min, physio_val_max, physio_val_steps)
-
-        # specify lags for prediction (number of samples set by n_eval )
-        pred_lags_event = np.linspace(0, self.n_lags_event, n_eval)
-        # project event lag vector onto B-spline basis
-        pred_basis_event = dmatrix(
-            self.basis_event.basis.design_info,
-            {'x': pred_lags_event.reshape(-1, 1)}
-        )
-        # project event prediction value on lag B-spline basis
-        event_pred = [
-            PRED_EVENT_VAL * pred_basis_event[:, spline_n]
-            for spline_n in range(pred_basis_event.shape[1])
-         ]
-        event_pred = np.vstack(event_pred).T
-
-        # create full event regressor with zeros for other trial types
-        n_total_regs = len(self.event_reg_cols)
-        n_trial_regs = self.basis_event.basis.shape[1]
-        trial_start_idx = self.event_reg_cols.index(f"{trial}_lag_spline1")
-        event_pred_full = np.zeros((event_pred.shape[0], n_total_regs))
-        event_pred_full[:, trial_start_idx:trial_start_idx+n_trial_regs] = event_pred
-
-        # compute the estimated HRF for each physio value
-        pred_func_list = []
-        for i, val in enumerate(physio_val):
-            physio_pred = np.zeros((event_pred.shape[0], 1))
-            physio_pred[:, 0] = val
-
-            # create interaction regressor
-            interaction_pred = create_interaction_matrix(
-                event_pred_full,
-                physio_pred
-            )
-            # concatenate all regressors
-            all_pred_full = np.hstack((
-                event_pred_full,
-                physio_pred,
-                interaction_pred
-            ))
-            # Get predictions from model
-            pred_func_list.append(self.glm.predict(all_pred_full))
-
-        # package output in container object
-        dlm_pred = DLMInteractionPredResults(
-            pred_outcome = pred_func_list,
-            trial = trial,
-            dlm_params = DLMInteractionParams(
-                event_lags = pred_lags_event,
-                physio_lag = self.physio_lag,
-                physio_val = physio_val.tolist(),
-                n_eval = n_eval,
-                basis_type = self.basis_type,
-            )
-        )
-        return dlm_pred
-    
