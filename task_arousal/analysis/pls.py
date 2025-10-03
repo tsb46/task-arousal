@@ -120,9 +120,9 @@ class PLSEventPhysioModel:
             List of fMRI 2D datasets (2D - time x voxels).
             This should be in the same order as event_dfs (i.e., fmri_data[i] corresponds to event_dfs[i]).
             This should not be concatenated data across runs/sessions.
-        physio_data: List[np.ndarray]
-            List of physio signal (2D - time x 1).
-            This should be in the same order as event_dfs (i.e., physio_data[i] corresponds to event_dfs[i]).
+        physio_data: Dict[str, List[np.ndarray]]
+            Dictionary of physio signal (2D - time x 1) arrays, keyed by physio label.
+            This should be in the same order as event_dfs (i.e., physio_data[physio_label][i] corresponds to event_dfs[i]).
             This should not be concatenated data across runs/sessions.
 
         Returns
