@@ -45,10 +45,12 @@ class DLMCAParams:
 
 @dataclass
 class DLMCAResults:
-    # store prediction results at each value of physio signal
-    pred_outcome: List[np.ndarray]
-    trial: str
+    # store results of commonality analysis
     dlm_params: DLMCAParams
+    r2_full: np.ndarray
+    r2_common: np.ndarray
+    r2_physio_unique: np.ndarray
+    r2_event_unique: np.ndarray
 
 
 class BSplineLagBasis:
@@ -592,7 +594,7 @@ class DistributedLagCommonalityAnalysis:
         event_dfs: List[pd.DataFrame], 
         fmri_data: List[np.ndarray],
         physio_data: Dict[str, List[np.ndarray]]
-    ):
+    ) -> DLMCAResults:
         """
         fit regression model of combined event and physio lag spline basis
         regressed on functional time courses.
@@ -791,4 +793,17 @@ class DistributedLagCommonalityAnalysis:
         self.r2_common = (
             self.r2_full - self.r2_event_unique - self.r2_physio_unique
         )
-        return self
+        return DLMCAResults(
+            dlm_params = DLMCAParams(
+                event_lags = np.arange(0, self.n_lags_event+1),
+                physio_lags = self.physio_lags,
+                regressor_duration = self.regressor_duration,
+                n_knots_event = self.n_knots_event,
+                n_knots_physio = self.n_knots_physio,
+                basis_type = self.basis_type,
+            ),
+            r2_full = self.r2_full,
+            r2_common = self.r2_common,
+            r2_physio_unique = self.r2_physio_unique,
+            r2_event_unique = self.r2_event_unique
+        )
