@@ -8,6 +8,7 @@ import pickle
 import nibabel as nib
 import numpy as np
 
+from task_arousal.analysis import pls
 from task_arousal.analysis.pca import PCA
 from task_arousal.analysis.complex_pca import ComplexPCA
 from task_arousal.analysis.glm import (
@@ -16,7 +17,8 @@ from task_arousal.analysis.glm import (
 )
 from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
-    DistributedLagEventModel
+    DistributedLagEventModel,
+    DistributedLagCommonalityAnalysis
 )
 from task_arousal.analysis.pls import (
     PLSEventPhysioModel
@@ -54,7 +56,8 @@ ANALYSES = [
     'glm_event', 
     'glm_physio', 
     'dlm_physio', 
-    'dlm_event', 
+    'dlm_event',
+    'dlm_ca',
     'pca', 
     'cpca',
     'pls',
@@ -153,6 +156,43 @@ def _cpca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
         open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_metadata.pkl', 'wb')
     )
 
+def _dlm_ca(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
+    """
+    Perform commonality analysis on fMRI data, events and physio signals,
+    and save results to files
+
+    Parameters
+    ----------
+    data : DatasetLoad
+        Loaded dataset containing fMRI data and associated information
+    ds : Dataset
+        Dataset object for handling data operations
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    """
+    print(f'Performing commonality analysis on subject {subject}, task {task}')
+    # estimate DLM with 10 components
+    dlm = DistributedLagCommonalityAnalysis(
+        physio_lags=11,
+        regressor_duration=25.0,
+        n_knots_event=5,
+        n_knots_physio=5,
+    )
+    dlm_res = dlm.fit(
+        event_dfs=data['events'],
+        fmri_data=data['fmri'], # type: ignore
+        physio_data={
+            physio_label: [d[physio_label].to_numpy()[:,np.newaxis] for d in data['physio']]
+            for physio_label in PHYSIO_LABELS
+        }
+    )
+    # write dlm metadata (including pc scores, exp var, etc.) to pickle file
+    pickle.dump(
+        dlm_res,
+        open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_ca_metadata.pkl', 'wb')
+    )
 
 def _dlm_event(data: DatasetLoad, ds: Dataset, subject: str, task: str) -> None:
     """
