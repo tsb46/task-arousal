@@ -103,7 +103,7 @@ def main(subject: str, analysis: str | None) -> None:
                 print(f'DLM with physiological regressors analysis complete for subject {subject}, task {task}')
 
     # only perform DLM and GLM physio analyses for tasks with event conditions
-    if any(a in _analysis for a in ['dlm_event', 'glm_physio', 'pls', 'rrr']):
+    if any(a in _analysis for a in ['dlm_event', 'glm_physio', 'dlm_ca', 'pls', 'rrr']):
         for task in TASKS_EVENT:
             print(f'Loading data for subject {subject}, task {task} for DLM with event and GLM with physio analyses')
             data = ds.load_data(task=task, concatenate=False)
@@ -115,6 +115,10 @@ def main(subject: str, analysis: str | None) -> None:
                 # perform GLM analysis with physiological regressors
                 _glm_physio(data, ds, subject, task)
                 print(f'GLM with physiological regressors analysis complete for subject {subject}, task {task}')
+            if 'dlm_ca' in _analysis:
+                # perform commonality analysis with event and physiological regressors
+                _dlm_ca(data, ds, subject, task)
+                print(f'Commonality analysis complete for subject {subject}, task {task}')
             if 'pls' in _analysis:
                 # perform PLS analysis with event and physiological regressors
                 _pls(data, ds, subject, task)
