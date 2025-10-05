@@ -206,7 +206,7 @@ class DistributedLagPhysioModel:
         neg_nlags: int = 0,
         n_knots: int = 5,
         knots: List[int] | None = None,
-        basis: Literal['cr','bs'] = 'bs'
+        basis: Literal['cr','bs'] = 'cr'
     ):
         # specify array of lags
         self.nlags = nlags
@@ -370,7 +370,7 @@ class DistributedLagEventModel:
         regressor_duration: float = 20.0,
         n_knots: int = 5,
         knots: List[int] | None = None,
-        basis: Literal['cr','bs'] = 'bs'
+        basis: Literal['cr','bs'] = 'cr'
     ):
         self.regressor_duration = regressor_duration
         self.n_knots = n_knots
