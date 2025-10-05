@@ -24,6 +24,7 @@ class DLMParams:
     lag_max: float
     lag_min: float
     n_eval: int
+    pred_val: float
     pred_lags: np.ndarray
     basis_type: str
 
@@ -326,6 +327,7 @@ class DistributedLagPhysioModel:
                 lag_max = lag_max,
                 lag_min = lag_min,
                 n_eval = n_eval,
+                pred_val = pred_val,
                 pred_lags = pred_lags,
                 basis_type = self.basis_type,
             )   
@@ -477,6 +479,7 @@ class DistributedLagEventModel:
     def evaluate(
         self,
         trial: str,
+        pred_val: float = 1.0,
         n_eval: int = 30,
     ) -> DLMPredResults:
         """
