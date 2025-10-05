@@ -9,6 +9,7 @@ import pandas as pd
 
 from patsy import dmatrix # type: ignore
 from scipy.interpolate import interp1d
+from scipy.stats import zscore
 from sklearn.metrics import r2_score
 from sklearn.linear_model import Ridge, LinearRegression
 
@@ -258,7 +259,8 @@ class DistributedLagPhysioModel:
         # fit Linear regression model
         self.glm = Ridge(fit_intercept=False, alpha=1.0)
         self.glm.fit(
-            x_basis[~self.nan_mask],
+            # normalize X basis
+            np.array(zscore(x_basis[~self.nan_mask])),
             Y[~self.nan_mask]
         )
         return self
@@ -467,6 +469,8 @@ class DistributedLagEventModel:
         outcome_concat = np.vstack(outcome_data)
         # concatenate event regressors across sessions/runs
         event_regs_concat = np.vstack(self.event_regs)
+        # zscore event regressors
+        event_regs_concat = np.array(zscore(event_regs_concat, axis=0))
 
         # fit Ridge regression model
         self.glm = Ridge(fit_intercept=False, alpha=1.0)
@@ -499,8 +503,6 @@ class DistributedLagEventModel:
         dlm_pred: DistributedLagModelPredResults
             Container object for distribued lag model prediction results
         """
-        # fixed prediction value for event regressor
-        PRED_EVENT_VAL = 1.0
         # check that trial is in trial_types
         if trial not in self.trial_types:
             raise ValueError(f"trial must be one of {self.trial_types}")
@@ -514,7 +516,7 @@ class DistributedLagEventModel:
         )
         # project prediction value on lag B-spline basis
         event_pred = [
-            PRED_EVENT_VAL * pred_basis[:, spline_n]
+            pred_val * pred_basis[:, spline_n]
             for spline_n in range(pred_basis.shape[1])
          ]
         event_pred = np.vstack(event_pred).T
@@ -534,6 +536,7 @@ class DistributedLagEventModel:
                 lag_max = self.n_lags,
                 lag_min = 0,
                 n_eval = n_eval,
+                pred_val = pred_val,
                 pred_lags = pred_lags,
                 basis_type = self.basis_type,
             )
