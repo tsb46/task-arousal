@@ -149,11 +149,11 @@ def extract_resp_o2_features(
         order=4,
     )
     # invert signal to find minima as peaks
-    ts_filt = np.array(ts_filt) * -1
+    ts_filt_neg = np.array(ts_filt) * -1
     # find minima (end-tidal O2 points)
     o2_peaks, peaks_info = find_peaks(
-        ts_filt,
-        height=np.percentile(ts_filt, 50),  # only consider peaks above 50th percentile
+        ts_filt_neg,
+        height=np.percentile(ts_filt_neg, 50),  # only consider peaks above 50th percentile
         distance=sf*1.5,  # minimum distance of 1.5 seconds between peaks
     )
     # the O2 signal has a prominent transient artifact at the first peak of the recording
@@ -162,7 +162,7 @@ def extract_resp_o2_features(
         peaks_info['peak_heights'][0] = peaks_info['peak_heights'][1]
 
     endtidal_o2 = nk.signal_interpolate(
-        o2_peaks, peaks_info['peak_heights'],
+        o2_peaks, peaks_info['peak_heights']*-1,
         np.arange(len(ts_filt)),
         method='monotone_cubic'
     )
