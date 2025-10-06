@@ -5,14 +5,14 @@ fMRI preprocessing is performed on outputs from fMRIPrep, including:
 
 1) Drop dummy volumes
 2) Detrending
-3) Band-pass filtering (0.01 - 0.25 Hz)
+3) High-pass filtering (> 0.01 Hz)
 4) Standardize signal (z-score)
 5) Smoothing
 
 Physio preprocessing is performed on raw physiological data, including:
 
 1) Feature extraction
-2) Band-pass filtering
+2) High-pass filtering 
 3) Resampling to fMRI time points
 """
 import json
@@ -44,8 +44,6 @@ from task_arousal.preprocess.physio_features import (
 DUMMY_VOLUMES = 10
 # High-pass filter cutoff frequency for fmri
 HIGHPASS = 0.01
-# Low-pass filter cutoff frequency for fmri
-LOWPASS = 0.25
 # Full width at half maximum for Gaussian smoothing
 FWHM = 4  # in mm
 # physio fields to extract from raw data
@@ -232,7 +230,7 @@ def func_pipeline(func_fp: str) -> nib.Nifti1Image: # type: ignore
 
     1) Drop dummy volumes
     2) Detrending
-    3) Band-pass filtering
+    3) High-pass filtering (> 0.01 Hz)
     4) Standardization
     5) Smoothing
 
@@ -258,7 +256,6 @@ def func_pipeline(func_fp: str) -> nib.Nifti1Image: # type: ignore
         detrend=True, 
         standardize=True,
         high_pass=HIGHPASS,
-        low_pass=LOWPASS,
         mask_img=MASK,
         t_r=TR
     )
@@ -288,7 +285,7 @@ def physio_pipeline(
     1) Resample to 50Hz (polyphase filtering to avoid aliasing)
     2) Feature extraction
     3) Resample to fMRI time points (low-pass filter to avoid aliasing, then interpolate)
-    4) Band-pass filtering to match fMRI bandpass (0.01 - 0.25 Hz)
+    4) High-pass filtering to match fMRI highpass (> 0.01 Hz)
     5) Standardization
 
     Parameters
@@ -349,13 +346,13 @@ def physio_pipeline(
                 feat_ts_lowpass = nk.signal_filter(
                     feat_ts,
                     sampling_rate=PHYSIO_RESAMPLE_F,
-                    highcut=1/(2*TR), # Nyquist frequency
+                    highcut=(1/(2*TR)) + 0.05, # slightly above nyquist frequency
                     method='butterworth',
                     order=4
                 )
                 # next, interpolate to fMRI time points
                 feat_ts_resampled = _physio_resample_to_fmri(
-                    feat_ts_lowpass, 
+                    feat_ts_lowpass,
                     physio_sf=PHYSIO_RESAMPLE_F, 
                     fmri_n_tp=fmri_n_tp, 
                     fmri_tr=TR,
@@ -366,7 +363,6 @@ def physio_pipeline(
                     feat_ts_resampled,
                     sampling_rate=1/TR, # type: ignore
                     lowcut=HIGHPASS,
-                    highcut=LOWPASS,
                     method='butterworth',
                     order=4
                 )
