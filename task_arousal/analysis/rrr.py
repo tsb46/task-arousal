@@ -13,7 +13,7 @@ from sklearn.linear_model import Ridge
 from sklearn.decomposition import PCA
 
 from task_arousal.constants import TR, SLICE_TIMING_REF, EVENT_COLUMNS
-from task_arousal.analysis.dlm import BSplineLagBasis
+from task_arousal.analysis.dlm import SplineLagBasis
 from task_arousal.analysis.utils import boxcar
 
 # define the resampling of the event time course for boxcar function (in seconds)
@@ -155,7 +155,7 @@ class RRREventPhysioModel:
         # calculate number of lags based on regressor duration and TR
         self.n_lags_event = int(np.ceil(self.regressor_duration / RESAMPLE_TR))
         # create spline basis for event regressors
-        self.basis_event = BSplineLagBasis(
+        self.basis_event = SplineLagBasis(
             n_knots=self.n_knots_event,
             knots=self.event_knots,
             basis_type=self.basis_type # type: ignore
@@ -214,7 +214,7 @@ class RRREventPhysioModel:
             self.event_regs.append(event_regs_trial)
         
         # create B-spline basis across lags of physio signal
-        self.basis_physio = BSplineLagBasis(
+        self.basis_physio = SplineLagBasis(
             n_knots=self.n_knots_physio, knots=self.physio_knots, 
             basis_type=self.basis_type # type: ignore
         )
