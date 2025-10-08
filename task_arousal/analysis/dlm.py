@@ -35,7 +35,7 @@ class DLMPredResults:
     dlm_params: DLMParams
     trial: str | None = None
 
-# dataclass for storing DLM interaction model parameters
+# dataclass for storing DLM commonality analysis parameters
 @dataclass
 class DLMCAParams:
     event_lags: np.ndarray
@@ -55,10 +55,28 @@ class DLMCAResults:
     r2_event_unique: np.ndarray
 
 
-class BSplineLagBasis:
+# dataclass for storing DLM interaction model parameters
+@dataclass
+class DLMTensorParams:
+    event_lags: np.ndarray
+    physio_lags: int
+    regressor_duration: float
+    n_knots_event: int
+    n_knots_physio: int
+    basis_type: str
+
+
+@dataclass
+class DLMTensorResults:
+    # store results of commonality analysis
+    dlm_params: DLMTensorParams
+    interaction_surfaces: np.ndarray
+
+
+class SplineLagBasis:
     """
     Spline basis for modeling temporal lags of a physio signal based on
-    scikit-learn fit/transform API. Specifically, a B-spline basis is fit
+    scikit-learn fit/transform API. Specifically, a spline basis is fit
     along the columns of a lag matrix (rows: time courses; columns: lags),
     where the first column is the original time course, the second column
     is the original time course lagged by one time point, the third column
@@ -78,15 +96,6 @@ class BSplineLagBasis:
     basis_type: Literal['ns','bs']
         basis type for the spline basis. 'ns' for natural spline, 'bs' for B-spline.
 
-    Methods
-    -------
-    fit(X,y):
-        fit B-spline basis to lags of the signal.
-    transform(X, y)
-        project lags of the signal onto the B-spline basis. X is the physio
-        time course represented in an ndarray with time points along the
-        rows and a single column (# of time points, 1).
-
     """
     def __init__(
         self, 
@@ -99,7 +108,7 @@ class BSplineLagBasis:
         self.knots = knots
         self.basis_type = basis_type
 
-    def create(self, nlags: int, neg_nlags: int = 0) -> 'BSplineLagBasis':
+    def create(self, nlags: int, neg_nlags: int = 0) -> 'SplineLagBasis':
         """
         create spline basis over lags of physio signal
 
@@ -246,7 +255,7 @@ class DistributedLagPhysioModel:
         if X.ndim != 2 or X.shape[1] != 1:
             raise ValueError("X must have a single column")
         # create B-spline basis across lags of physio signal
-        self.basis = BSplineLagBasis(
+        self.basis = SplineLagBasis(
             n_knots=self.n_knots, knots=self.knots, 
             basis_type=self.basis_type # type: ignore
         )
@@ -361,13 +370,6 @@ class DistributedLagEventModel:
     basis: Literal['cr','bs']
         basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
 
-    Methods
-    -------
-    fit(X,y):
-        regress lags of task events onto voxel-wise functional time courses or physio signals.
-
-    predict()
-
     """
     def __init__(
         self,
@@ -411,7 +413,7 @@ class DistributedLagEventModel:
         # calculate number of lags based on regressor duration and TR
         self.n_lags = int(np.ceil(self.regressor_duration / RESAMPLE_TR))
         # create spline basis
-        self.basis = BSplineLagBasis(
+        self.basis = SplineLagBasis(
             n_knots=self.n_knots,
             knots=self.knots,
             basis_type=self.basis_type # type: ignore
@@ -448,10 +450,10 @@ class DistributedLagEventModel:
             )
             # project each trial event regressor onto spline basis
             events_regs_trial = []
-            for i, trial in enumerate(self.trial_types):
+            for t, trial in enumerate(self.trial_types):
                 # project event regressor onto spline basis
                 # fill in NaNs with 0 to keep same length
-                event_reg_proj = self.basis.project(event_reg[i], fill_val=0.0)
+                event_reg_proj = self.basis.project(event_reg[t], fill_val=0.0)
                 # downsample (interpolate) event regressor to match fmri times
                 interp_func = interp1d(
                     h_frametimes,
@@ -642,7 +644,7 @@ class DistributedLagCommonalityAnalysis:
         # calculate number of lags based on regressor duration and TR
         self.n_lags_event = int(np.ceil(self.regressor_duration / RESAMPLE_TR))
         # create spline basis for event regressors
-        self.basis_event = BSplineLagBasis(
+        self.basis_event = SplineLagBasis(
             n_knots=self.n_knots_event,
             knots=self.event_knots,
             basis_type=self.basis_type # type: ignore
@@ -679,10 +681,10 @@ class DistributedLagCommonalityAnalysis:
             )
             # project each trial event regressor onto spline basis
             events_regs_trial = []
-            for i, trial in enumerate(self.trial_types):
+            for t, trial in enumerate(self.trial_types):
                 # project event regressor onto spline basis
                 # fill in NaNs with 0 to keep same length
-                event_reg_proj = self.basis_event.project(event_reg[i], fill_val=0.0)
+                event_reg_proj = self.basis_event.project(event_reg[t], fill_val=0.0)
                 # downsample (interpolate) event regressor to match fmri times
                 interp_func = interp1d(
                     h_frametimes,
@@ -701,7 +703,7 @@ class DistributedLagCommonalityAnalysis:
             self.event_regs.append(event_regs_trial)
         
         # create B-spline basis across lags of physio signal
-        self.basis_physio = BSplineLagBasis(
+        self.basis_physio = SplineLagBasis(
             n_knots=self.n_knots_physio, knots=self.physio_knots, 
             basis_type=self.basis_type # type: ignore
         )
