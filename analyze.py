@@ -8,7 +8,6 @@ import pickle
 import nibabel as nib
 import numpy as np
 
-from task_arousal.analysis import pls
 from task_arousal.analysis.pca import PCA
 from task_arousal.analysis.complex_pca import ComplexPCA
 from task_arousal.analysis.glm import (
