@@ -2,6 +2,7 @@
 Reduced Rank Regression module.
 """
 from dataclasses import dataclass
+from statistics import LinearRegression
 from typing import Dict, List, Literal
 
 import pandas as pd
@@ -9,7 +10,7 @@ import numpy as np
 
 from scipy.interpolate import interp1d
 from scipy.stats import zscore
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge, LinearRegression
 from sklearn.decomposition import PCA
 
 from task_arousal.constants import TR, SLICE_TIMING_REF, EVENT_COLUMNS
@@ -203,10 +204,6 @@ class RRREventPhysioModel:
                     kind='cubic'
                 )
                 event_reg_proj = interp_func(frametimes).T
-                # z-score event regressor - for comparability with physio regressor
-                event_reg_proj = (
-                    (event_reg_proj - np.mean(event_reg_proj, axis=0)) / np.std(event_reg_proj, axis=0)
-                )
                 # trim fmri_img and event_reg to same length
                 events_regs_trial.append(event_reg_proj)
             # create design matrix by concatenating trial event regressors
@@ -258,7 +255,7 @@ class RRREventPhysioModel:
         # concatenate event and physio regressors
         all_regs_concat = np.hstack([event_regs_concat, physio_regs_concat])
 
-        # concatenate all colulmn labels
+        # concatenate all column labels
         self.all_reg_cols = self.event_reg_cols + self.physio_reg_cols
         
         # z-score all regressors
