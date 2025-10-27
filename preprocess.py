@@ -9,10 +9,6 @@ from typing import Literal
 from task_arousal.io.file import get_dataset_subjects
 from task_arousal.preprocess.pipeline import PreprocessingPipeline
 
-# define tasks to preprocess (exclude Motor task)
-EUSKALIBUR_TASKS = ['pinel', 'simon', 'rest', 'breathhold']
-HCP_TASKS = ['EMOTION', 'GAMBLING', 'LANGUAGE', 'MOTOR',
-             'RELATIONAL', 'SOCIAL', 'WM']
 
 def main(dataset: Literal['hcp', 'euskalibur'], subject: str | None = None):
     """Perform full preprocessing pipeline on selected subject or all subjects."""
@@ -22,17 +18,11 @@ def main(dataset: Literal['hcp', 'euskalibur'], subject: str | None = None):
     else:
         subjects = [subject]
     
-    # select tasks based on dataset
-    if dataset == 'hcp':
-        tasks = HCP_TASKS
-    elif dataset == 'euskalibur':
-        tasks = EUSKALIBUR_TASKS
-    
     # preprocess selected tasks for each subject
     for subject in subjects:
         print(f'Starting preprocessing for subject: {subject}')
         pipeline = PreprocessingPipeline(dataset, subject)
-        for task in tasks:
+        for task in pipeline.tasks:
             print(f'Preprocessing task: {task} for subject: {subject}')
             pipeline.preprocess(task=task, save_physio_figs=True)
     return
