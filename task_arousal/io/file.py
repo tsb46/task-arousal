@@ -811,3 +811,36 @@ class FileMapperHCP:
                 f"events/{self.subject}_{task}_{run}_*.txt"
             )
         return glob(pattern)
+
+
+def get_dataset_subjects(dataset: str) -> List[str]:
+    """
+    Get the list of available subjects for a specific dataset.
+
+    Parameters
+    ----------
+    dataset : str
+        The dataset name. Options are 'euskalibur' or 'hcp'.
+
+    Returns
+    -------
+    list of str
+        A list of subject identifiers.
+    """
+    if dataset == 'euskalibur':
+        # The BIDSLayout initialization can be slow, especially for large datasets
+        with warnings.catch_warnings():
+            # suppress warnings about soon-to-be-deprecated ignore parameter
+            warnings.simplefilter("ignore")
+            if IS_DERIVED:
+                layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, is_derivative=True)
+            else:
+                layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, derivatives=True)
+        subjects = layout.get_subjects()
+    elif dataset == 'hcp':
+        subject_list = pd.read_csv(os.path.join(DATA_DIRECTORY_HCP, 'subject_list_hcp.csv'))
+        subjects = subject_list['subject'].unique().astype(str).tolist()
+    else:
+        raise ValueError("Dataset must be 'euskalibur' or 'hcp'.")
+
+    return subjects
