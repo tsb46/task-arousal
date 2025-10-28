@@ -332,6 +332,11 @@ def func_pipeline(dataset: str, func_fp: str) -> nib.Nifti1Image: # type: ignore
     # Mask out smoothed data to ensure non-brain voxels are zero
     mask_img = nib.load(MASK) # type: ignore
     func_data_masked = apply_mask(func_img_proc, mask_img)
+
+    # if HCP, downcast to float32 to save space
+    if dataset == 'hcp':
+        func_data_masked = func_data_masked.astype('<f4')
+
     func_img_proc = unmask(func_data_masked, mask_img)
     
     return func_img_proc # type: ignore
