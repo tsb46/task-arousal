@@ -48,7 +48,7 @@ from task_arousal.preprocess.physio_features import (
 ## Preprocessing parameters
 # Number of dummy volumes to drop 
 DUMMY_VOLUMES_EUSKALIBUR = 10
-DUMMY_VOLUMES_HCP = 14
+DUMMY_VOLUMES_HCP = 0
 # High-pass filter cutoff frequency for fmri
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
