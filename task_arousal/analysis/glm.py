@@ -14,7 +14,7 @@ from nilearn.image import concat_imgs
 from sklearn.linear_model import Ridge
 
 from task_arousal.analysis.utils import create_interaction_matrix, lag_mat
-from task_arousal.constants import TR, SLICE_TIMING_REF, MASK, EVENT_COLUMNS
+from task_arousal.constants import SLICE_TIMING_REF, EVENT_COLUMNS
 
 
 @dataclass
@@ -24,6 +24,10 @@ class GLMResults:
 
     Attributes
     ----------
+    tr: float
+        Repetition time (TR) of the fMRI data in seconds.
+    mask: nib.Nifti1Image | None
+        the brain mask used in the GLM
     design_matrix: pd.DataFrame
         the design matrix used in the GLM
     contrast_maps: dict[str, nib.Nifti1Image]
@@ -32,6 +36,8 @@ class GLMResults:
         the hemodynamic response function used in the GLM
 
     """
+    tr: float
+    mask: nib.nifti1.Nifti1Image
     contrast_maps: dict[str, nib.Nifti1Image] # type: ignore
     hrf: str
     fir_delays: np.ndarray | None = None
@@ -44,13 +50,16 @@ class GLMPhysioResults:
 
     Attributes
     ----------
-    design_matrix: pd.DataFrame
-        the design matrix used in the GLM
-    contrast_maps: dict[str, nib.Nifti1Image]
-        a dictionary of contrast maps for each condition in the design matrix
-    hrf: str
-        the hemodynamic response function used in the GLM
+    tr: float
+        Repetition time (TR) of the fMRI data in seconds.
+    pred_func: np.ndarray
+        predicted fMRI response from the GLM
+    physio_val: List[float]
+        list of physio regressor values used in prediction
+    physio_lag: int
+        the lag (in TRs) used for the physio regressor
     """
+    tr: float
     pred_func: np.ndarray
     physio_val: List[float]
     physio_lag: int
@@ -62,7 +71,9 @@ class GLM:
     Fixed-effects general linear model (GLM) implementation using Nilearn.
     """
     def __init__(
-        self, 
+        self,
+        tr: float,
+        mask: str,
         hrf: Literal['spm', 'glover', 'fir'] = 'spm',
         fir_delays: np.ndarray | None = None
     ):
@@ -70,12 +81,18 @@ class GLM:
 
         Attributes
         ----------
-           hrf : Literal['spm', 'glover', 'fir']
+            tr : float
+                Repetition time (TR) of the fMRI data in seconds.
+            mask : str
+                Path to the brain mask NIfTI file.
+            hrf : Literal['spm', 'glover', 'fir']
                 The hemodynamic response function to use. Defaults to 'spm'.
             fir_delays : np.ndarray | None
                 If using 'fir' hrf, the delays (in seconds) to use for the
                 finite impulse response model. Must be specified if hrf is 'fir'.
         """
+        self.tr = tr
+        self.mask = mask
         self.hrf = hrf
         self.fir_delays = fir_delays
         if self.hrf == 'fir' and self.fir_delays is None:
@@ -112,8 +129,8 @@ class GLM:
             # get number of time points and TR from fmri image
             fmri_n_tp = fmri_img.shape[-1]
             # create frame times based on the number of scans and TR
-            fmri_times = np.arange(0, fmri_n_tp*TR, TR)
-            fmri_times += (TR * SLICE_TIMING_REF)  # middle of the TR
+            fmri_times = np.arange(0, fmri_n_tp*self.tr, self.tr)
+            fmri_times += (self.tr * SLICE_TIMING_REF)  # middle of the TR
             # create design matrix
             design_matrix = make_first_level_design_matrix(
                 fmri_times,
@@ -125,7 +142,7 @@ class GLM:
             design_matrices.append(design_matrix)
 
         # load mask
-        mask_img = nib.load(MASK) # type: ignore
+        mask_img = nib.load(self.mask) # type: ignore
 
         # fit the GLM model
         self.model = FirstLevelModel(
@@ -151,6 +168,8 @@ class GLM:
             }
 
         return GLMResults(
+            tr=self.tr,
+            mask=mask_img, # type: ignore
             contrast_maps=contrast_maps, # type: ignore
             hrf=self.hrf,
             fir_delays=self.fir_delays
@@ -164,6 +183,7 @@ class GLMPhysio:
     """
     def __init__(
         self,
+        tr: float,
         physio_lag: int = 5,
         hrf: Literal['spm', 'glover'] = 'spm',
     ):
@@ -171,11 +191,14 @@ class GLMPhysio:
 
         Attributes
         ----------
+            tr : float
+                Repetition time (TR) of the fMRI data in seconds.
             physio_lag : int
                 The chosen lag (in TRs) to include for the physiological regressor. Defaults to 5.
             hrf : Literal['spm', 'glover']
                 The hemodynamic response function to use. Defaults to 'spm'.
         """
+        self.tr = tr
         self.physio_lag = physio_lag
         self.hrf = hrf
 
@@ -216,8 +239,8 @@ class GLMPhysio:
             # get number of time points and TR from fmri dataset
             fmri_n_tp = fmri_d.shape[0]
             # create frame times based on the number of scans and TR
-            fmri_times = np.arange(0, fmri_n_tp*TR, TR)
-            fmri_times += (TR * SLICE_TIMING_REF)  # middle of the TR
+            fmri_times = np.arange(0, fmri_n_tp*self.tr, self.tr)
+            fmri_times += (self.tr * SLICE_TIMING_REF)  # middle of the TR
  
             # create design matrix
             design_matrix = make_first_level_design_matrix(
@@ -329,6 +352,7 @@ class GLMPhysio:
         pred_func = self.model.predict(full_pred)
 
         return GLMPhysioResults(
+            tr=self.tr,
             pred_func=pred_func,
             physio_val=physio_val.tolist(),
             physio_lag=self.physio_lag,

@@ -26,7 +26,7 @@ import neurokit2 as nk
 import numpy as np
 import pandas as pd
 
-from nilearn.image import clean_img, smooth_img
+from nilearn.image import clean_img, smooth_img, resample_img
 from nilearn.masking import apply_mask, unmask
 from scipy.stats import zscore
 
@@ -52,8 +52,7 @@ DUMMY_VOLUMES_HCP = 0
 # High-pass filter cutoff frequency for fmri
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
-FWHM_EUSKALIBUR = 4  # in mm
-FWHM_HCP = 5 # in mm
+FWHM = 4  # in mm
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
 PHYSIO_COLUMNS_HCP = ['respiratory_effort', 'cardiac']
@@ -145,8 +144,10 @@ class PreprocessingPipeline:
                 for fmri_file in fmri_files:
                     if verbose:
                         print(f"Preprocessing fMRI file: {fmri_file}")
+                    # if hcp, resample to 3mm to match mask
+                    resample = True if self.dataset == 'hcp' else False
                     # Apply the functional MRI preprocessing pipeline
-                    fmri_proc = func_pipeline(self.dataset, fmri_file)
+                    fmri_proc = func_pipeline(self.dataset, fmri_file, resample=resample)
                     # Write out the preprocessed fMRI file
                     self.write_out_fmri_file(fmri_proc, fmri_file)
 
@@ -175,7 +176,7 @@ class PreprocessingPipeline:
                             )
                         # for HCP, match based on task and run
                         matching_fmri_files = self.file_mapper.get_matching_files(
-                            {'task': task_proc, 'run': run_id}, 'fmri' # type: ignore
+                            {'task': task_proc, 'run': run_id}, 'fmri'
                         )
                     if len(matching_fmri_files) == 0:
                         # in some scenarios, physio may be recorded but no usable fMRI data
@@ -206,12 +207,12 @@ class PreprocessingPipeline:
             if verbose:
                 print(f"Finished processing task '{task}' for subject '{self.subject}'.")
 
-    def write_out_fmri_file(self, fmri_img: nib.Nifti1Image, file_orig: str) -> None: # type: ignore
+    def write_out_fmri_file(self, fmri_img: nib.nifti1.Nifti1Image, file_orig: str) -> None:
         """Write out the preprocessed fMRI file.
 
         Parameters
         ----------
-        fmri_img : nib.Nifti1Image
+        fmri_img : nib.nifti1.Nifti1Image
             The preprocessed fMRI image.
         file_orig : str
             The original file path
@@ -232,8 +233,8 @@ class PreprocessingPipeline:
             # add 'preprocfinal_bold.nii.gz' to file name
             file_new = f"{file_new_name}_preproc.nii.gz"
         output_path = f"{output_dir}/{file_new}"
-        nib.save(fmri_img, output_path) # type: ignore
-    
+        nib.nifti1.save(fmri_img, output_path)
+
     def write_out_physio_file(self, physio_dict: dict[str, np.ndarray], file_orig: str) -> None:
         """Write out the preprocessed physiological file.
 
@@ -270,12 +271,13 @@ class PreprocessingPipeline:
         )
 
 
-def func_pipeline(dataset: str, func_fp: str) -> nib.Nifti1Image: # type: ignore
+def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nifti1.Nifti1Image:
     """
     Function pipeline for processing functional MRI data.
 
     Preprocessing steps:
-
+    
+    ( if HCP, first resample fmri to 3mm to match mask )
     1) Drop dummy volumes
     2) Detrending
     3) High-pass filtering (> 0.01 Hz)
@@ -299,13 +301,26 @@ def func_pipeline(dataset: str, func_fp: str) -> nib.Nifti1Image: # type: ignore
         MASK = MASK_EUSKALIBUR
     elif dataset == 'hcp':
         MASK = MASK_HCP
-    # select smoothing fwhm based on dataset
-    if dataset == 'euskalibur':
-        FWHM = FWHM_EUSKALIBUR
-    elif dataset == 'hcp':
-        FWHM = FWHM_HCP
+
     # Load functional MRI data
-    func_img = nib.load(func_fp) # type: ignore
+    func_img = nib.nifti1.load(func_fp)
+
+    # load mask
+    mask_img = nib.nifti1.load(MASK)
+
+    # upsample HCP data to 3mm
+    if resample:
+        func_img = resample_img(
+            func_img,
+            target_affine=mask_img.affine,
+            target_shape=mask_img.shape[:3],
+            interpolation='nearest',
+            copy_header=True,
+            force_resample=True
+        )
+
+    # ensure is nifti.nifti1.Nifti1Image
+    assert isinstance(func_img, nib.nifti1.Nifti1Image), "Loaded fMRI data is not a Nifti1Image."
 
     # drop dummy volumes (number depends on dataset)
     if dataset == 'euskalibur':
@@ -314,7 +329,7 @@ def func_pipeline(dataset: str, func_fp: str) -> nib.Nifti1Image: # type: ignore
     elif dataset == 'hcp':
         dummy_n = DUMMY_VOLUMES_HCP
         tr = TR_HCP
-    func_img_proc = _func_trim(func_img, dummy_n) # type: ignore
+    func_img_proc = _func_trim(func_img, dummy_n)
 
     # using the clean_img function to detrend, high-pass filter, and standardize the signal
     func_img_proc = clean_img(
@@ -325,28 +340,27 @@ def func_pipeline(dataset: str, func_fp: str) -> nib.Nifti1Image: # type: ignore
         mask_img=MASK,
         t_r=tr
     )
+    # ensure nifti after clean_img
+    assert isinstance(func_img_proc, nib.nifti1.Nifti1Image), "clean_img did not return a Nifti1Image."
 
     # Apply spatial smoothing
-    func_img_proc = _func_smooth(func_img_proc, fwhm=FWHM) # type: ignore
+    func_img_proc = _func_smooth(func_img_proc, fwhm=FWHM)
 
     # Mask out smoothed data to ensure non-brain voxels are zero
-    mask_img = nib.load(MASK) # type: ignore
     func_data_masked = apply_mask(func_img_proc, mask_img)
-
-    # if HCP, downcast to float32 to save space
-    if dataset == 'hcp':
-        func_data_masked = func_data_masked.astype('<f4')
-
     func_img_proc = unmask(func_data_masked, mask_img)
-    
-    return func_img_proc # type: ignore
+
+    # ensure nifti after unmask
+    assert isinstance(func_img_proc, nib.nifti1.Nifti1Image), "unmask did not return a Nifti1Image."
+
+    return func_img_proc
 
 
 def physio_pipeline(
     dataset: str,
     physio_fp: str, 
     physio_json: str | None, 
-    fmri_fp: str, 
+    fmri_fp: str,
     save_physio_figs: bool = False
 ) -> dict[str, np.ndarray]:
     """

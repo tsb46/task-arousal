@@ -15,7 +15,7 @@ IS_DERIVED = os.getenv('IS_DERIVED', 'false').lower() == 'true'
 
 # Brain mask
 MASK_EUSKALIBUR = 'templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz'
-MASK_HCP = 'templates/MNI152_T1_2mm_brain_mask_hcp.nii.gz'
+MASK_HCP = 'templates/MNI152_T1_3mm_brain_mask_hcp.nii.gz'
 # TR (Repetition Time) in seconds
 TR_EUSKALIBUR = 1.5
 TR_HCP = 0.72

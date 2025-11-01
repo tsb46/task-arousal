@@ -25,7 +25,7 @@ from task_arousal.analysis.pls import (
 from task_arousal.analysis.rrr import (
     RRREventPhysioModel
 )
-from task_arousal.analysis.dataset import (
+from task_arousal.analysis.dataset_euskalibur import (
     Dataset, 
     DatasetLoad,
     PINEL_CONDITIONS,

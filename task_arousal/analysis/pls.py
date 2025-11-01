@@ -11,7 +11,7 @@ from scipy.interpolate import interp1d
 from mbpls.mbpls import MBPLS
 from scipy.stats import zscore
 
-from task_arousal.constants import TR, SLICE_TIMING_REF, EVENT_COLUMNS
+from task_arousal.constants import SLICE_TIMING_REF, EVENT_COLUMNS
 from task_arousal.analysis.dlm import SplineLagBasis
 from task_arousal.analysis.utils import boxcar
 
@@ -30,6 +30,7 @@ class PLSParams:
 
 @dataclass
 class PLSResults:
+    tr: float
     pls_params: PLSParams
     pls: MBPLS
     physio_col_labels: List[str]
@@ -47,6 +48,8 @@ class PLSEventPhysioModel:
 
     Attributes
     ----------
+    tr: float
+        Repetition time (TR) of the fMRI data in seconds.
     n_components: int
         Number of PLS components to extract. Defaults to 5.
     physio_lags: int
@@ -84,6 +87,7 @@ class PLSEventPhysioModel:
     """
     def __init__(
         self,
+        tr: float,
         n_components: int = 5,
         physio_lags: int = 10,
         regressor_duration: float = 20.0,
@@ -93,6 +97,7 @@ class PLSEventPhysioModel:
         event_knots: List[int] | None = None,
         basis: Literal['cr','bs'] = 'bs'
     ):
+        self.tr = tr
         self.n_components = n_components
         self.physio_lags = physio_lags
         self.regressor_duration = regressor_duration
@@ -177,7 +182,7 @@ class PLSEventPhysioModel:
             # create boxcar event regressor resampled at RESAMPLE_TR
             event_reg, frametimes, h_frametimes = boxcar(
                 event_df,
-                tr=TR,
+                tr=self.tr,
                 resample_tr=RESAMPLE_TR,
                 n_vols=n_vols,
                 slicetime_ref=SLICE_TIMING_REF,
@@ -269,6 +274,7 @@ class PLSEventPhysioModel:
                 n_knots_physio=self.n_knots_physio,
                 basis_type=self.basis_type
             ),
+            tr=self.tr,
             pls=self.pls,
             physio_col_labels=self.physio_reg_cols,
             event_col_labels=self.event_reg_cols,

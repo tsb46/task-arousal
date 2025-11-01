@@ -752,13 +752,14 @@ class FileMapperHCP:
                     f"physio/tfMRI_{self.subject}_{task}_RL_Physio_log.txt"
                 )
             elif desc == 'preproc':
+                # there was a typo in the HCP physio filenames where 'preproc' is misspelled as 'prepoc'
                 fp_lr = os.path.join(
                     DATA_DIRECTORY_HCP,
-                    f"physio/tfMRI_{self.subject}_{task}_LR_physio_preproc.tsv.gz"
+                    f"physio/tfMRI_{self.subject}_{task}_LR_Physio_log_physio_prepoc.tsv.gz"
                 )
                 fp_rl = os.path.join(
                     DATA_DIRECTORY_HCP,
-                    f"physio/tfMRI_{self.subject}_{task}_RL_physio_preproc.tsv.gz"
+                    f"physio/tfMRI_{self.subject}_{task}_RL_Physio_log_physio_prepoc.tsv.gz"
                 )
             filenames = [fp_lr, fp_rl]
         else:
@@ -768,9 +769,10 @@ class FileMapperHCP:
                     f"physio/tfMRI_{self.subject}_{task}_{run}_Physio_log.txt"
                 )
             elif desc == 'preproc':
+                # there was a typo in the HCP physio filenames where 'preproc' is misspelled as 'prepoc'
                 fp = os.path.join(
                     DATA_DIRECTORY_HCP,
-                    f"physio/tfMRI_{self.subject}_{task}_{run}_physio_preproc.tsv.gz"
+                    f"physio/tfMRI_{self.subject}_{task}_{run}_Physio_log_physio_prepoc.tsv.gz"
                 )
             filenames = [fp]
         return filenames

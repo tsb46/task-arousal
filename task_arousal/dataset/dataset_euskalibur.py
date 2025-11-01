@@ -1,6 +1,6 @@
 """
 Class for managing and loading preprocessed dataset files for 
-a given subject.
+a given subject in the Euskalibur dataset.
 """
 from typing import List, TypedDict
 
@@ -8,19 +8,21 @@ import pandas as pd
 import nibabel as nib
 import numpy as np
 
-from nilearn.masking import apply_mask, unmask
-from scipy.stats import zscore
-
-from task_arousal.constants import MASK
-from task_arousal.io.file import FileMapper
+from task_arousal.constants import MASK_EUSKALIBUR
+from task_arousal.io.file import FileMapperEuskalibur
+from .dataset_utils import (
+    load_physio as _load_physio,
+    load_fmri as _load_fmri,
+    to_4d as _to_4d,
+)
 
 # TypedDict for dataset returned from load_data
 class DatasetLoad(TypedDict):
-    fmri: List[np.ndarray] | List[nib.Nifti1Image] # type: ignore
+    fmri: List[np.ndarray] | List[nib.nifti1.Nifti1Image]
     physio: List[pd.DataFrame]
     events: List[pd.DataFrame]
 
-# conditions for pinel task
+# conditions for pinel task in Euskalibur dataset
 PINEL_CONDITIONS = [
     'acalc',
     'amot_left',
@@ -34,7 +36,7 @@ PINEL_CONDITIONS = [
     'vsent'
 ]
 
-# conditions for simon task
+# conditions for simon task in Euskalibur dataset
 SIMON_CONDITIONS = [
     'left_congruent',
     'right_congruent',
@@ -43,14 +45,16 @@ SIMON_CONDITIONS = [
 ]
 
 
-class Dataset:
+
+class DatasetEuskalibur:
     """
-    Class for managing and loading preprocessed dataset files for a given subject.
+    Class for managing and loading preprocessed dataset files for a given subject in 
+    the Euskalibur dataset.
     """
 
     def __init__(self, subject: str):
         """
-        Initialize the Dataset class for a specific subject.
+        Initialize the Dataset class for a specific subject in the Euskalibur dataset.
 
         Parameters
         ----------
@@ -59,16 +63,16 @@ class Dataset:
         """
         self.subject = subject
         # map file paths associated to subject
-        self.file_mapper = FileMapper(subject)
+        self.file_mapper = FileMapperEuskalibur(subject)
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
         # get available sessions from mapper
         self.sessions = self.file_mapper.sessions
         # attach mask to instance
-        self.mask = MASK
+        self.mask = MASK_EUSKALIBUR
 
     def load_data(
-        self, 
+        self,
         task: str,
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
@@ -89,7 +93,9 @@ class Dataset:
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
             Whether to concatenate data across sessions. 
-            If convert_to_2d is False, this will be ignored. Default is False.
+            If convert_to_2d is False, this will be ignored. Note, that 
+            event data will not be concatenated to preserve trial timing 
+            across runs. Default is False.
         normalize : bool, optional
             Whether to normalize (z-score) the data along the time dimension. 
             If convert_to_2d is False, this will be ignored. Default is True.
@@ -212,7 +218,7 @@ class Dataset:
                             f"run '{run if run is not None else ''}'."
                         )
                     # load fMRI file into 2D array or 4D image
-                    fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d)
+                    fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d, verbose=verbose)
                     
                 # append data to dataset
                 dataset['physio'].append(physio_df)
@@ -240,12 +246,10 @@ class Dataset:
                 dataset['fmri'] = [np.concatenate(dataset['fmri'], axis=0)]
             else:
                 print("Warning: fmri data not concatenated because convert_to_2d is False.")
-            # only concatenate events if they exist
-            if has_events:
-                dataset['events'] = [pd.concat(dataset['events'], axis=0, ignore_index=True)]
+            # events are not concatenated to preserve trial timing across runs
 
         if verbose:
-            print("Data loading complete.")
+            print(f"Data loading complete for subject '{self.subject}', task '{task}'.")
         return DatasetLoad(**dataset)
 
     def events_to_df(
@@ -322,70 +326,35 @@ class Dataset:
         pd.DataFrame
             The physio data as a pandas DataFrame.
         """
-        physio_df = pd.read_csv(fp, sep='\t', compression='gzip')
-        if normalize:
-            # z-score each column
-            physio_df = physio_df.apply(zscore, axis=0) # type: ignore
-        return physio_df
+        return _load_physio(fp, normalize=normalize)
 
     def load_fmri(
         self,
         fp: str,
         normalize: bool = False,
-        convert_to_2d: bool = True
+        convert_to_2d: bool = True,
+        verbose: bool = True
     ) -> np.ndarray:
         """
-        Load the preprocessed fMRI data from a NIfTI file.
-
-        Parameters
-        ----------
-        fp : str
-            The path to the fMRI NIfTI file.
-        normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension. 
-            If convert_to_2d is False, this will be ignored. Default is False.
-        convert_to_2d : bool, optional
-            Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
-
-        Returns
-        -------
-        np.ndarray
-            The fMRI data as a numpy array with voxels along the columns
-            and time points along the rows.
+        Load the preprocessed fMRI data from a NIfTI file, delegating to shared utils.
+        Returns time x voxels if convert_to_2d else a 4D NIfTI image.
         """
-        fmri_img = nib.load(fp) # type: ignore
-        if not convert_to_2d:
-            return fmri_img # type: ignore
-
-        # apply mask to get 2D array (voxels x time points)
-        fmri_data = apply_mask(fmri_img, self.mask)
-        if normalize:
-            fmri_data = zscore(fmri_data, axis=0)
-            # check that z-score did not introduce NaNs
-            if np.isnan(np.array(fmri_data)).any():
-                raise ValueError(f"NaN values found in fMRI data after z-scoring for file: {fp}")
-        return fmri_data # type: ignore
+        return _load_fmri(
+            fp, 
+            self.mask, 
+            normalize=normalize, 
+            convert_to_2d=convert_to_2d,
+            verbose=verbose
+        ) # type: ignore
 
     def to_4d(
         self,
         fmri_data: np.ndarray
     ) -> nib.Nifti1Image: # type: ignore
         """
-        Convert the 2D fMRI data array back to a 4D NIfTI image.
-
-        Parameters
-        ----------
-        fmri_data : np.ndarray
-            The fMRI data as a numpy array with voxels along the columns
-            and time points along the rows.
-
-        Returns
-        -------
-        nib.Nifti1Image
-            The fMRI data as a 4D NIfTI image.
+        Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        fmri_img_4d = unmask(fmri_data, self.mask)
-        return fmri_img_4d # type: ignore
+        return _to_4d(fmri_data, self.mask) # type: ignore
 
 
 def _extract_timing_pinel(
