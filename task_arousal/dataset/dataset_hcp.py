@@ -173,9 +173,6 @@ class DatasetHCPSubject:
                         convert_to_2d=convert_to_2d,
                         verbose=verbose
                     )
-                    # downcast to float32 to save space
-                    if convert_to_2d:
-                        fmri_data = fmri_data.astype('<f4') # type: ignore
 
             # events
             ev_files = self.file_mapper.get_session_event_files(session, task, run=run)
@@ -259,8 +256,12 @@ class DatasetHCPSubject:
     def to_4d(
         self,
         fmri_data: np.ndarray
-    ) -> nib.Nifti1Image: # type: ignore
+    ) -> nib.nifti1.Nifti1Image: 
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        return _to_4d(fmri_data, self.mask) # type: ignore
+        # get mask
+        mask_img = nib.nifti1.load(MASK_HCP)
+        # ensure nifti
+        assert isinstance(mask_img, nib.nifti1.Nifti1Image), "Loaded mask is not a Nifti1Image."
+        return _to_4d(fmri_data, mask_img)
