@@ -52,7 +52,8 @@ DUMMY_VOLUMES_HCP = 0
 # High-pass filter cutoff frequency for fmri
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
-FWHM = 4  # in mm
+FWHM_EUSKALIBUR = 4  # in mm
+FWHM_HCP = 5  # in mm
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
 PHYSIO_COLUMNS_HCP = ['respiratory_effort', 'cardiac']
@@ -301,6 +302,12 @@ def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nif
         MASK = MASK_EUSKALIBUR
     elif dataset == 'hcp':
         MASK = MASK_HCP
+
+    # select FWHM based on dataset
+    if dataset == 'euskalibur':
+        FWHM = FWHM_EUSKALIBUR
+    elif dataset == 'hcp':
+        FWHM = FWHM_HCP
 
     # Load functional MRI data
     func_img = nib.nifti1.load(func_fp)
