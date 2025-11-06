@@ -805,12 +805,12 @@ class FileMapperHCP:
         if run is None:
             pattern = os.path.join(
                 DATA_DIRECTORY_HCP,
-                f"events/{self.subject}_{task}*.txt"
+                f"event/{self.subject}_{task}*.txt"
             )
         else:
             pattern = os.path.join(
                 DATA_DIRECTORY_HCP,
-                f"events/{self.subject}_{task}_{run}_*.txt"
+                f"event/{self.subject}_{task}_{run}_*.txt"
             )
         return glob(pattern)
 

@@ -25,7 +25,7 @@ TASK_HCP_EV_COLUMNS = ['onset', 'duration', 'amplitude']
 # conditions for emotion task in HCP dataset
 EMOTION_CONDITIONS = [
     'fear',
-    'neutral'
+    'neut'
 ]
 # conditions for gambling task in HCP dataset
 GAMBLING_CONDITIONS = [
