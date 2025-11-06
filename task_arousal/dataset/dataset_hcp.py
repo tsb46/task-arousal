@@ -3,7 +3,7 @@ Subject-level dataset loader for HCP preprocessed data.
 """
 from __future__ import annotations
 
-from typing import List, TypedDict, Dict
+from typing import List, Dict
 
 import pandas as pd
 import numpy as np
@@ -14,14 +14,10 @@ from task_arousal.io.file import FileMapperHCP
 from .dataset_utils import (
     load_physio as _load_physio, 
     load_fmri as _load_fmri,
-    to_4d as _to_4d
+    to_4d as _to_4d,
+    DatasetLoad,
 )
 
-
-class DatasetLoad(TypedDict):
-    fmri: List[np.ndarray]  # or List[nib.Nifti1Image] if convert_to_2d=False
-    physio: List[pd.DataFrame]
-    events: List[pd.DataFrame]
 
 # expected task columns
 TASK_HCP_EV_COLUMNS = ['onset', 'duration', 'amplitude']

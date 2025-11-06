@@ -3,7 +3,7 @@ Group-level dataset orchestrator that loads multiple subjects for a given datase
 """
 from __future__ import annotations
 
-from typing import Callable, List, Literal, Protocol, Any
+from typing import Callable, List, Literal, Protocol, Any, Iterator, Tuple, Union
 
 import nibabel as nib 
 import numpy as np
@@ -13,7 +13,7 @@ from task_arousal.io.file import get_dataset_subjects
 from .dataset_hcp import DatasetHCPSubject
 from .dataset_euskalibur import DatasetEuskalibur
 from task_arousal.constants import MASK_HCP, MASK_EUSKALIBUR
-from .dataset_utils import to_4d as _to_4d
+from .dataset_utils import to_4d as _to_4d, DatasetLoad
 
 
 # Protocol for subject loader classes
@@ -79,7 +79,7 @@ class GroupDataset:
         stream: bool = False,
         on_error: Literal['skip', 'raise'] = 'raise',
         **kwargs,
-    ):
+    ) -> Union[Iterator[Tuple[str, Any]], DatasetLoad]:
         """
         Load data for all configured subjects.
 
@@ -105,9 +105,18 @@ class GroupDataset:
         kwargs :
             Forwarded to subject.load_data(...).
         """
+        # if dataset is hcp, get subject list for the specific task
+        if self.dataset == 'hcp' and isinstance(self.subjects, dict):
+            if task in self.subjects:
+                subjects = self.subjects[task]
+            else:
+                raise ValueError(f"Task {task} not found in HCP subject list.")
+        else:
+            subjects = self.subjects
+            
         if stream:
             def _stream():
-                for subj in self.subjects:
+                for subj in subjects:
                     try:
                         loader = self._factory(subj)
                         result = loader.load_data(
@@ -129,12 +138,12 @@ class GroupDataset:
                         continue
             return _stream()
         else:
-            out = {
+            out_lists: dict[str, list] = {
                 "fmri": [],
                 "physio": [],
                 "events": []
             }
-            for subj in self.subjects:
+            for subj in subjects:
                 try:
                     loader = self._factory(subj)
                     result = loader.load_data(
@@ -148,9 +157,9 @@ class GroupDataset:
                         **kwargs,
                     )
                     # If results are concatenated within subject, take first element
-                    out['fmri'].append(result['fmri'][0] if concatenate else result['fmri'])
-                    out['physio'].append(result['physio'][0] if concatenate else result['physio'])
-                    out['events'].append(result['events'][0] if concatenate else result['events'])
+                    out_lists['fmri'].append(result['fmri'][0] if concatenate else result['fmri'])
+                    out_lists['physio'].append(result['physio'][0] if concatenate else result['physio'])
+                    out_lists['events'].append(result['events'][0] if concatenate else result['events'])
 
                 except Exception as e:
                     if self.verbose:
@@ -162,27 +171,33 @@ class GroupDataset:
             if concatenate:
                 if self.verbose:
                     print("Concatenating data across subjects...")
-                out = self._post_concatenate_subjects(out, convert_to_2d)
+                out: DatasetLoad = self._post_concatenate_subjects(out_lists, convert_to_2d)
+            else:
+                out = out_lists # type: ignore
             return out
 
-    def _post_concatenate_subjects(self, dataset_load: dict[str, Any], convert_to_2d: bool) -> Any:
+    def _post_concatenate_subjects(self, dataset_load: dict[str, list], convert_to_2d: bool) -> DatasetLoad:
         """
         Concatenate data across subjects after loading.
         Expects dataset_load to have keys 'fmri' (List[np.ndarray or Nifti]) and 'physio' (List[pd.DataFrame]).
         """
 
         # Concatenate physio tables
-        dataset_load['physio'] = pd.concat(dataset_load['physio'], ignore_index=True)
+        physio_concat = pd.concat(dataset_load['physio'], ignore_index=True)
 
         # Concatenate fmri if 2D
         if convert_to_2d:
-            dataset_load['fmri'] = np.concatenate(dataset_load['fmri'], axis=0)
+            fmri_concat = np.concatenate(dataset_load['fmri'], axis=0)
         else:
             # cannot concatenate 4D here; leave unchanged
             print("Warning: skipping group concatenation of non-2D data.")
-            dataset_load['fmri'] = dataset_load['fmri']
+            fmri_concat = dataset_load['fmri']
         
-        return dataset_load
+        return {
+            'fmri': fmri_concat,
+            'physio': physio_concat,
+            'events': dataset_load['events']
+        }
     
     def to_4d(
         self,

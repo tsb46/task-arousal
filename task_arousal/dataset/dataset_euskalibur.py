@@ -2,7 +2,7 @@
 Class for managing and loading preprocessed dataset files for 
 a given subject in the Euskalibur dataset.
 """
-from typing import List, TypedDict
+from typing import List
 
 import pandas as pd
 import nibabel as nib
@@ -14,13 +14,8 @@ from .dataset_utils import (
     load_physio as _load_physio,
     load_fmri as _load_fmri,
     to_4d as _to_4d,
+    DatasetLoad,
 )
-
-# TypedDict for dataset returned from load_data
-class DatasetLoad(TypedDict):
-    fmri: List[np.ndarray] | List[nib.nifti1.Nifti1Image]
-    physio: List[pd.DataFrame]
-    events: List[pd.DataFrame]
 
 # conditions for pinel task in Euskalibur dataset
 PINEL_CONDITIONS = [

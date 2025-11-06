@@ -1,7 +1,7 @@
 """
 Shared dataset loading utilities used by subject-level loaders across datasets.
 """
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -9,6 +9,13 @@ import nibabel as nib
 
 from nilearn.masking import apply_mask, unmask 
 from scipy.stats import zscore 
+
+
+# Shared TypedDict for dataset returned from load_data across all dataset loaders
+class DatasetLoad(TypedDict):
+    fmri: Any
+    physio: Any
+    events: Any
 
 
 def load_physio(fp: str, normalize: bool = False) -> pd.DataFrame:
