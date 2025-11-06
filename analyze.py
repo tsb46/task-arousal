@@ -3,7 +3,6 @@ Perform full analysis pipeline on selected subject
 """
 
 import argparse
-from pdb import run
 import pickle
 
 from typing import Literal
