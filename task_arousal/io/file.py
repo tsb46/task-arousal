@@ -815,7 +815,7 @@ class FileMapperHCP:
         return glob(pattern)
 
 
-def get_dataset_subjects(dataset: str) -> List[str]:
+def get_dataset_subjects(dataset: str) -> List[str] | dict[str, List[str]]:
     """
     Get the list of available subjects for a specific dataset.
 
@@ -826,8 +826,8 @@ def get_dataset_subjects(dataset: str) -> List[str]:
 
     Returns
     -------
-    list of str
-        A list of subject identifiers.
+    list of str | dict of str to list of str
+        A list of subject identifiers (EUSKALIBUR) or a dictionary mapping tasks to subject lists (HCP).
     """
     if dataset == 'euskalibur':
         # The BIDSLayout initialization can be slow, especially for large datasets
@@ -841,7 +841,12 @@ def get_dataset_subjects(dataset: str) -> List[str]:
         subjects = layout.get_subjects()
     elif dataset == 'hcp':
         subject_list = pd.read_csv(os.path.join(DATA_DIRECTORY_HCP, 'subject_list_hcp.csv'))
-        subjects = subject_list['subject'].unique().astype(str).tolist()
+        # some subjects do not have data for all tasks, so we will return a dictionary
+        tasks = subject_list['task'].unique().tolist()
+        subjects = {}
+        for task in tasks:
+            task_subjects = subject_list[subject_list['task'] == task]['subject'].unique().astype(str).tolist()
+            subjects[task] = task_subjects
     else:
         raise ValueError("Dataset must be 'euskalibur' or 'hcp'.")
 
