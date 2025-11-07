@@ -164,6 +164,15 @@ def main(dataset: Literal['EUSKALIBUR', 'HCP'], subject: str | None, analysis: s
         for task in TASKS:
             print(f'Loading concatenated data for dataset {dataset}, subject {_subject}, task {task}')
             data: DatasetLoad = ds.load_data(task=task, concatenate=True) # type: ignore
+            # if dataset is HCP, data will be an array, wrap in a list for consistency with
+            # Euskalibur dataset structure
+            if dataset == 'HCP':
+                # first check that dataset returned is dictionary
+                assert isinstance(data, dict), "Data should be a dictionary"
+                data['fmri'] = [data['fmri']]
+                data['events'] = [data['events']]
+                data['physio'] = [data['physio']]
+                
             # perform PCA analysis
             if 'pca' in _analysis:
                 _pca(dataset, data, ds, _subject, task)
