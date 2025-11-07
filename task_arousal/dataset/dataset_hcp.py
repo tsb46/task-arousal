@@ -223,7 +223,7 @@ class DatasetHCPSubject:
         # loop through conditions and find corresponding files
         events_df = []
         for cond in conditions:
-            matching_files = [f for f in ev_files if f"_{cond}.txt" in f]
+            matching_files = [f for f in ev_files if ((f"RL_{cond}.txt" in f) or (f"LR_{cond}.txt" in f))]
             if len(matching_files) > 1:
                 raise ValueError(f"Multiple event files found for condition '{cond}' in run '{run}'.")
             if len(matching_files) < 1:
