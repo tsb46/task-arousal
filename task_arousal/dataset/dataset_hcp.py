@@ -54,7 +54,7 @@ RELATIONAL_CONDITIONS = [
 # conditions for social task in HCP dataset
 SOCIAL_CONDITIONS = [
     'mental',
-    'theory_of_mind'
+    'rnd'
 ]
 # conditions for working memory task in HCP dataset
 WM_CONDITIONS = [
