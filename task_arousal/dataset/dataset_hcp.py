@@ -59,13 +59,13 @@ SOCIAL_CONDITIONS = [
 # conditions for working memory task in HCP dataset
 WM_CONDITIONS = [
     '2bk_body',
-    '2bk_face',
-    '2bk_place',
-    '2bk_tool',
+    '2bk_faces',
+    '2bk_places',
+    '2bk_tools',
     '0bk_body',
-    '0bk_face',
-    '0bk_place',
-    '0bk_tool'  
+    '0bk_faces',
+    '0bk_places',
+    '0bk_tools'  
 ]
 
 
