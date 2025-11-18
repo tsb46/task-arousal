@@ -155,15 +155,15 @@ def lag_mat(x: np.ndarray, lags: list[int], fill_val: float = np.nan) -> np.ndar
     # fill w/ Nans
     x_lag[:] = fill_val
     # Copy lagged columns of X into X_lag
-    for i, l in enumerate(lags):
+    for i, lag in enumerate(lags):
         # target columns of X_lag
         j = i * n_cols
         k = j + n_cols  # (i+1) * ncols
         # number rows of X
-        nl = n_rows - abs(l)
+        nl = n_rows - abs(lag)
         # Copy
-        if l >= 0:
-            x_lag[l:, j:k] = x[:nl, :]
+        if lag >= 0:
+            x_lag[lag:, j:k] = x[:nl, :]
         else:
-            x_lag[:l, j:k] = x[-nl:, :]
+            x_lag[:lag, j:k] = x[-nl:, :]
     return x_lag
