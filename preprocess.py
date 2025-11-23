@@ -18,13 +18,25 @@ def main(dataset: Literal['hcp', 'euskalibur'], subject: str | None = None):
     else:
         subjects = [subject]
     
-    # preprocess selected tasks for each subject
-    for subject in subjects:
-        print(f'Starting preprocessing for subject: {subject}')
-        pipeline = PreprocessingPipeline(dataset, subject)
-        for task in pipeline.tasks:
-            print(f'Preprocessing task: {task} for subject: {subject}')
-            pipeline.preprocess(task=task, save_physio_figs=True)
+    # preprocess by subject for EuskaliBUR
+    if dataset == 'euskalibur':
+        for subject in subjects:
+            print(f'Starting preprocessing for subject: {subject}')
+            pipeline = PreprocessingPipeline(dataset, subject)
+            for task in pipeline.tasks:
+                print(f'Preprocessing task: {task} for subject: {subject}')
+                pipeline.preprocess(task=task, save_physio_figs=True)
+                
+    # preprocess by task for HCP
+    elif dataset == 'hcp':
+        assert isinstance(subjects, dict), 'For HCP, subjects should be a dictionary of tasks as keys and list of subject IDs as values.'
+        tasks = subjects.keys()
+        # loop through tasks and subjects
+        for task in tasks:
+            for subject in subjects[task]:
+                pipeline = PreprocessingPipeline(dataset, subject)
+                print(f'Preprocessing task: {task} for subject: {subject}')
+                pipeline.preprocess(task=task, save_physio_figs=True)
     return
 
 
