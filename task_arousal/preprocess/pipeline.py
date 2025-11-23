@@ -1,7 +1,8 @@
 """
 Preprocessing pipeline for fMRI and physiological data.
 
-fMRI preprocessing is performed on outputs from fMRIPrep, including:
+fMRI preprocessing is performed on outputs from fMRIPrep for EuskalIBUR and minimal preprocessing
+pipeline for HCP, including:
 
 1) Drop dummy volumes
 2) Detrending
@@ -315,13 +316,13 @@ def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nif
     # load mask
     mask_img = nib.nifti1.load(MASK)
 
-    # upsample HCP data to 3mm
+    # downsample HCP data to 3mm
     if resample:
         func_img = resample_img(
             func_img,
             target_affine=mask_img.affine,
             target_shape=mask_img.shape[:3],
-            interpolation='nearest',
+            interpolation='continuous',
             copy_header=True,
             force_resample=True
         )
