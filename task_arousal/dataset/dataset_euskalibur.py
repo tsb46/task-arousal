@@ -39,6 +39,15 @@ SIMON_CONDITIONS = [
     'right_incongruent'
 ]
 
+# conditions for motor task in Euskalibur dataset
+MOTOR_CONDITIONS = [
+    'toe_left',
+    'toe_right',
+    'finger_left',
+    'finger_right',
+    'tongue',
+    'star'
+]
 
 
 class DatasetEuskalibur:
@@ -115,6 +124,10 @@ class DatasetEuskalibur:
             runs = self.file_mapper.tasks_runs[task]
         elif task == 'simon':
             conditions = SIMON_CONDITIONS
+            has_events = True
+            runs = self.file_mapper.tasks_runs[task]
+        elif task == 'motor':
+            conditions = MOTOR_CONDITIONS
             has_events = True
             runs = self.file_mapper.tasks_runs[task]
         elif task in 'breathhold':
@@ -278,8 +291,8 @@ class DatasetEuskalibur:
         # extract event timings
         event_timing = []
         for c in conditions:
-            if task == 'pinel':
-                onsets, durations = _extract_timing_pinel(
+            if task == 'pinel' or task == 'motor':
+                onsets, durations = _extract_timing_pinel_motor(
                     fps_onset=fps_onset,
                     fps_duration=fps_duration,
                     condition=c
@@ -352,7 +365,7 @@ class DatasetEuskalibur:
         return _to_4d(fmri_data, self.mask) # type: ignore
 
 
-def _extract_timing_pinel(
+def _extract_timing_pinel_motor(
     fps_onset: List[str],
     fps_duration: List[str],
     condition: str

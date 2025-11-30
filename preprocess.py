@@ -61,7 +61,7 @@ if __name__ == '__main__':
         required=False,
         default=None,
         help='Subject to perform preprocessing pipeline. ' \
-        'Only the subject ID is needed, e.g., sub-001. If not provided, ' \
+        'Only the subject ID is needed, e.g., 001. If not provided, ' \
         'the pipeline will be run for all subjects in the dataset.',
     )
 
