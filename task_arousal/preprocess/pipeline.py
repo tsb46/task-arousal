@@ -228,7 +228,7 @@ class PreprocessingPipeline:
             # strip 'preproc_bold.nii.gz' from file name
             file_new_name = file_orig_name.rstrip('preproc_bold.nii.gz')
             # add 'desc-preprocfinal_bold.nii.gz' to file name
-            file_new = f"{file_new_name}-preprocfinal_bold.nii.gz"
+            file_new = f"{file_new_name}preprocfinal_bold.nii.gz"
         elif self.dataset == 'hcp':
             # strip 'preproc_bold.nii.gz' from file name
             file_new_name = file_orig_name.rstrip('.nii.gz')
