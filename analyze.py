@@ -33,22 +33,12 @@ from task_arousal.dataset.dataset_euskalibur import (
     SIMON_CONDITIONS,
     MOTOR_CONDITIONS as MOTOR_CONDITIONS_EUSKALIBUR
 )
-from task_arousal.dataset.dataset_hcp import (
-    EMOTION_CONDITIONS,
-    GAMBLING_CONDITIONS,
-    MOTOR_CONDITIONS,
-    LANGUAGE_CONDITIONS,
-    RELATIONAL_CONDITIONS,
-    SOCIAL_CONDITIONS,
-    WM_CONDITIONS
-)
+
 from task_arousal.dataset.dataset_group import GroupDataset
 from task_arousal.dataset.dataset_utils import DatasetLoad
 from task_arousal.constants import (
     TR_EUSKALIBUR, 
-    TR_HCP,
     MASK_EUSKALIBUR,
-    MASK_HCP
 )
 
 # define output directory
@@ -63,36 +53,12 @@ PHYSIO_LABELS_EUSKALIBUR = [
     'endtidal_co2',
     'endtidal_o2',
 ]
-PHYSIO_LABELS_HCP = [
-    'ppg_amplitude',
-    'heart_rate',
-    'resp_amp',
-    'resp_rate'
-]
 
 # define all tasks (exclude Motor task)
 TASKS_EUSKALIBUR = ['pinel', 'simon', 'motor', 'rest', 'breathhold']
-TASKS_HCP = [
-    'EMOTION',
-    'GAMBLING',
-    'LANGUAGE',
-    'MOTOR',
-    'RELATIONAL',
-    'SOCIAL',
-    'WM'
-]
 
 # define tasks with event conditions
 TASKS_EVENT_EUSKALIBUR = ['pinel', 'simon', 'motor']
-TASKS_EVENT_HCP = [
-    'EMOTION',
-    'GAMBLING',
-    'LANGUAGE',
-    'RELATIONAL',
-    'SOCIAL',
-    'MOTOR',
-    'WM'
-]
 
 # define analyses to perform
 ANALYSES = [
@@ -108,9 +74,9 @@ ANALYSES = [
 ]
 
 # define Dataset type
-Dataset = DatasetEuskalibur | GroupDataset
+Dataset = DatasetEuskalibur
 
-def main(dataset: Literal['euskalibur', 'hcp'], subject: str | None, analysis: str | None) -> None:
+def main(dataset: Literal['euskalibur'], subject: str | None, analysis: str | None) -> None:
     # initialize dataset loader
     if dataset == 'euskalibur':
         if subject is None:
@@ -123,18 +89,8 @@ def main(dataset: Literal['euskalibur', 'hcp'], subject: str | None, analysis: s
         PHYSIO_LABELS = PHYSIO_LABELS_EUSKALIBUR
         # For EUSKALIBUR, subject is guaranteed to be non-None
         _subject: str = subject
-    elif dataset == 'hcp':
-        ds = GroupDataset(dataset='hcp')
-        TASKS = TASKS_HCP
-        TASKS_EVENT = TASKS_EVENT_HCP
-        TR = TR_HCP
-        MASK = MASK_HCP
-        PHYSIO_LABELS = PHYSIO_LABELS_HCP
-        # For HCP, we use a placeholder subject identifier for file naming
-        _subject = 'group'
-
     else:
-        raise ValueError(f"Unknown dataset: {dataset}")
+        raise NotImplementedError('Only EuskalIBUR dataset is currently supported')
     # if analysis is specified, only perform that analysis
     if analysis is not None:
         print(f'Performing only {analysis} analysis for subject {_subject}')
@@ -148,14 +104,6 @@ def main(dataset: Literal['euskalibur', 'hcp'], subject: str | None, analysis: s
             print(f'Loading data for subject {_subject}, task {task} for GLM analysis')
             # load nifti images without conversion to 2d array for input to nilearn GLM analysis
             data: DatasetLoad = ds.load_data(task=task, concatenate=False, convert_to_2d=False) # type: ignore
-            # if dataset is HCP, data will contain a list of runs per subject, flatten the list
-            if dataset == 'hcp':
-                # first check that dataset returned is dictionary
-                assert isinstance(data, dict), "Data should be a dictionary"
-                data['fmri'] = [d for run_data in data['fmri'] for d in run_data]
-                data['events'] = [d for run_data in data['events'] for d in run_data]
-                data['physio'] = [d for run_data in data['physio'] for d in run_data]
-
             # perform GLM analysis with event regressors
             _glm_event(dataset, data, ds, TR, MASK, _subject, task)
             print(f'GLM analyses complete for dataset {dataset}, subject {_subject}, task {task}')
@@ -165,14 +113,6 @@ def main(dataset: Literal['euskalibur', 'hcp'], subject: str | None, analysis: s
         for task in TASKS:
             print(f'Loading concatenated data for dataset {dataset}, subject {_subject}, task {task}')
             data: DatasetLoad = ds.load_data(task=task, concatenate=True) # type: ignore
-            # if dataset is hcp, data will be an array, wrap in a list for consistency with
-            # Euskalibur dataset structure
-            if dataset == 'hcp':
-                # first check that dataset returned is dictionary
-                assert isinstance(data, dict), "Data should be a dictionary"
-                data['fmri'] = [data['fmri']]
-                data['events'] = [data['events']]
-                data['physio'] = [data['physio']]
                 
             # perform PCA analysis
             if 'pca' in _analysis:
@@ -192,13 +132,6 @@ def main(dataset: Literal['euskalibur', 'hcp'], subject: str | None, analysis: s
         for task in TASKS_EVENT:
             print(f'Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event and GLM with physio analyses')
             data: DatasetLoad = ds.load_data(task=task, concatenate=False) # type: ignore
-            # if dataset is hcp, data will contain a list of runs per subject, flatten the list
-            if dataset == 'hcp':
-                # first check that dataset returned is dictionary
-                assert isinstance(data, dict), "Data should be a dictionary"
-                data['fmri'] = [d for run_data in data['fmri'] for d in run_data]
-                data['events'] = [d for run_data in data['events'] for d in run_data]
-                data['physio'] = [d for run_data in data['physio'] for d in run_data]
 
             if 'dlm_event' in _analysis:
                 # perform DLM analysis with event regressors
@@ -253,19 +186,11 @@ def _cpca(
     if dataset == "euskalibur":
         nib.nifti1.save(cpca_loadings_amp, f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_loadings_amp.nii.gz')
         nib.nifti1.save(cpca_loadings_phase, f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_loadings_phase.nii.gz')
-    elif dataset == "hcp":
-        nib.save(cpca_loadings_amp, f'{OUT_DIRECTORY}/hcp_{task}_cpca_loadings_amp.nii.gz') # type:ignore
-        nib.save(cpca_loadings_phase, f'{OUT_DIRECTORY}/hcp_{task}_cpca_loadings_phase.nii.gz') # type:ignore
-    # write cpca metadata (including pc scores, exp var, etc.) to pickle file
-    if dataset == "euskalibur":
+
+        # write cpca metadata (including pc scores, exp var, etc.) to pickle file
         pickle.dump(
             cpca_results,
             open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_cpca_metadata.pkl', 'wb')
-        )
-    elif dataset == "hcp":
-        pickle.dump(
-            cpca_results,
-            open(f'{OUT_DIRECTORY}/hcp_{task}_cpca_metadata.pkl', 'wb')
         )
 
 def _dlm_ca(
@@ -284,7 +209,7 @@ def _dlm_ca(
     Parameters
     ----------
     dataset : str
-        Dataset type ('euskalibur' or 'hcp')
+        Dataset type ('euskalibur')
     data : DatasetLoad
         Loaded dataset containing fMRI data and associated information
     ds : Dataset
@@ -302,8 +227,7 @@ def _dlm_ca(
     # compute commonality analysis using DLM
     if dataset == 'euskalibur':
         physio_lags = 11
-    elif dataset == 'hcp':
-        physio_lags = 20
+
     dlm = DistributedLagCommonalityAnalysis(
         tr=tr,
         physio_lags=physio_lags,
@@ -325,11 +249,6 @@ def _dlm_ca(
             dlm_res,
             open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_ca_metadata.pkl', 'wb')
         )
-    elif dataset == "hcp":
-        pickle.dump(
-            dlm_res,
-            open(f'{OUT_DIRECTORY}/hcp_{task}_ca_metadata.pkl', 'wb')
-        )
 
 
 def _dlm_event(
@@ -347,7 +266,7 @@ def _dlm_event(
     Parameters
     ----------
     dataset : str
-        Dataset type ('euskalibur' or 'hcp')
+        Dataset type ('euskalibur')
     data : DatasetLoad
         Loaded dataset containing fMRI data and associated information
     ds : Dataset
@@ -369,23 +288,6 @@ def _dlm_event(
             conditions = MOTOR_CONDITIONS_EUSKALIBUR
         else:
             raise ValueError(f'Task {task} not recognized for DLM event analysis')
-    elif dataset == 'hcp':
-        if task == 'EMOTION':
-            conditions = EMOTION_CONDITIONS
-        elif task == 'GAMBLING':
-            conditions = GAMBLING_CONDITIONS
-        elif task == 'LANGUAGE':
-            conditions = LANGUAGE_CONDITIONS
-        elif task == 'MOTOR':
-            conditions = MOTOR_CONDITIONS
-        elif task == 'RELATIONAL':
-            conditions = RELATIONAL_CONDITIONS
-        elif task == 'SOCIAL':
-            conditions = SOCIAL_CONDITIONS
-        elif task == 'WM':
-            conditions = WM_CONDITIONS
-        else:
-            raise ValueError(f'Task {task} not recognized for DLM event analysis')
     
     dlm = DistributedLagEventModel(
         tr=tr, regressor_duration=20.0, n_knots=5, basis='cr'
@@ -400,20 +302,10 @@ def _dlm_event(
         pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
         if dataset == "euskalibur":
             nib.nifti1.save(pred_func_img, f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_event_{condition}.nii.gz')
-        elif dataset == "hcp":
-            nib.save(pred_func_img, f'{OUT_DIRECTORY}/hcp_{task}_dlm_event_{condition}.nii.gz') # type:ignore
-
-        if dataset == "euskalibur":
             # write dlm metadata (including betas, t-stats, etc.) to pickle file
             pickle.dump(
                 dlm_eval,
                 open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_event_{condition}_metadata.pkl', 'wb')
-            )
-        elif dataset == "hcp":
-            # write dlm metadata (including betas, t-stats, etc.) to pickle file
-            pickle.dump(
-                dlm_eval,
-                open(f'{OUT_DIRECTORY}/hcp_{task}_dlm_event_{condition}_metadata.pkl', 'wb')
             )
 
 
@@ -433,7 +325,7 @@ def _dlm_physio(
     Parameters
     ----------
     dataset : str
-        Dataset type ('euskalibur' or 'hcp')
+        Dataset type ('euskalibur')
     data : DatasetLoad
         Loaded dataset containing fMRI data and associated information
     ds : Dataset
@@ -455,10 +347,7 @@ def _dlm_physio(
             dlm = DistributedLagPhysioModel(
                 tr=tr, neg_nlags=-3, nlags=8, n_knots=5, basis='cr'
             )
-        elif dataset == 'hcp':
-            dlm = DistributedLagPhysioModel(
-                tr=tr, neg_nlags=-8, nlags=20, n_knots=5, basis='cr'
-            )
+
         dlm = dlm.fit(
             X=data['physio'][0][physio_label].to_numpy().reshape(-1,1),
             Y=data['fmri'][0] # type: ignore
@@ -469,20 +358,13 @@ def _dlm_physio(
         pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
         if dataset == "euskalibur":
             nib.nifti1.save(pred_func_img, f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_physio_{physio_label}.nii.gz')
-        elif dataset == "hcp":
-            nib.nifti1.save(pred_func_img, f'{OUT_DIRECTORY}/hcp_{task}_dlm_physio_{physio_label}.nii.gz') # type:ignore
 
-        # write dlm metadata to pickle file
-        if dataset == "euskalibur":
+            # write dlm metadata to pickle file
             pickle.dump(
                 dlm_eval,
                 open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_dlm_physio_{physio_label}_metadata.pkl', 'wb')
             )
-        elif dataset == "hcp":
-            pickle.dump(
-                dlm_eval,
-                open(f'{OUT_DIRECTORY}/hcp_{task}_dlm_physio_{physio_label}_metadata.pkl', 'wb')
-            )
+
 
 def _glm_event(
     dataset: str, 
@@ -501,7 +383,7 @@ def _glm_event(
     Parameters
     ----------
     dataset: str
-        Dataset type ('euskalibur' or 'hcp')
+        Dataset type ('euskalibur')
     data : DatasetLoad
         Loaded dataset containing fMRI data and associated information
     ds : Dataset
@@ -523,43 +405,30 @@ def _glm_event(
     for glm_map_name, glm_map in glm_spm_results.contrast_maps.items():
         if dataset == "euskalibur":
             nib.nifti1.save(glm_map, f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_hrf_contrast_{glm_map_name}.nii.gz')
-        elif dataset == "hcp":
-            nib.nifti1.save(glm_map, f'{OUT_DIRECTORY}/hcp_{task}_glm_hrf_contrast_{glm_map_name}.nii.gz') # type:ignore
+
     # write glm metadata of HRF model (including contrasts, etc.) to pickle file
     if dataset == "euskalibur":
         pickle.dump(
             glm_spm_results,
             open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_hrf_metadata.pkl', 'wb')
         )
-    elif dataset == "hcp":
-        pickle.dump(
-            glm_spm_results,
-            open(f'{OUT_DIRECTORY}/hcp_{task}_glm_hrf_metadata.pkl', 'wb')
-        )
 
     # perform GLM analysis with 'fir' HRF model
     if dataset == "euskalibur":
         fir_delays = np.arange(10)  # FIR with 10 TR delays for euskalibur
-    elif dataset == "hcp":
-        fir_delays = np.arange(25)  # FIR with 25 TR delays for hcp
+
     glm_fir = GLM(tr=tr, mask=mask, hrf='fir', fir_delays=fir_delays)
     glm_fir_results = glm_fir.fit(event_df=data['events'], fmri=data['fmri']) # type: ignore
     # write contrast maps to nifti files
     for glm_map_name, glm_map in glm_fir_results.contrast_maps.items():
         if dataset == "euskalibur":
             nib.nifti1.save(glm_map, f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_fir_contrast_{glm_map_name}.nii.gz')
-        elif dataset == "hcp":
-            nib.nifti1.save(glm_map, f'{OUT_DIRECTORY}/hcp_{task}_glm_fir_contrast_{glm_map_name}.nii.gz')
+
     # write glm metadata of FIR model (including contrasts, etc.) to pickle file
     if dataset == "euskalibur":
         pickle.dump(
             glm_fir_results,
             open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_fir_metadata.pkl', 'wb')
-        )
-    elif dataset == "hcp":
-        pickle.dump(
-            glm_fir_results,
-            open(f'{OUT_DIRECTORY}/hcp_{task}_glm_fir_metadata.pkl', 'wb')
         )
 
 
@@ -604,23 +473,6 @@ def _glm_physio(
             conditions = MOTOR_CONDITIONS_EUSKALIBUR
         else:
             raise ValueError(f'Task {task} not recognized for GLM physio analysis')
-    elif dataset == 'hcp':
-        if task == 'EMOTION':
-            conditions = EMOTION_CONDITIONS
-        elif task == 'GAMBLING':
-            conditions = GAMBLING_CONDITIONS
-        elif task == 'LANGUAGE':
-            conditions = LANGUAGE_CONDITIONS
-        elif task == 'MOTOR':
-            conditions = MOTOR_CONDITIONS
-        elif task == 'RELATIONAL':
-            conditions = RELATIONAL_CONDITIONS
-        elif task == 'SOCIAL':
-            conditions = SOCIAL_CONDITIONS
-        elif task == 'WM':
-            conditions = WM_CONDITIONS
-        else:
-            raise ValueError(f'Task {task} not recognized for GLM physio analysis')
     
     # loop through physio signals
     for physio_label in physio_labels:
@@ -628,8 +480,6 @@ def _glm_physio(
         # perform GLM physio analysis with 'spm' HRF model
         if dataset == 'euskalibur':
             glm_physio = GLMPhysio(tr, hrf='spm', physio_lag=5)
-        elif dataset == 'hcp':
-            glm_physio = GLMPhysio(tr, hrf='spm', physio_lag=13)
 
         glm_physio.fit(
             event_df=data['events'],
@@ -645,22 +495,12 @@ def _glm_physio(
                     pred_func_img, 
                     f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_hrf_{physio_label}_contrast_{contrast_name}.nii.gz'
                 )
-            elif dataset == "hcp":
-                nib.save( # type: ignore
-                    pred_func_img, 
-                    f'{OUT_DIRECTORY}/hcp_{task}_glm_hrf_{physio_label}_contrast_{contrast_name}.nii.gz'
-                )
-            # write glm metadata of HRF model (including contrasts, etc.) to pickle file
-            if dataset == "euskalibur":
+                # write glm metadata of HRF model (including contrasts, etc.) to pickle file
                 pickle.dump(
                     glm_eval,
                     open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_glm_hrf_{physio_label}_contrast_{contrast_name}_metadata.pkl', 'wb')
                 )
-            elif dataset == "hcp":
-                pickle.dump(
-                    glm_eval,
-                    open(f'{OUT_DIRECTORY}/hcp_{task}_glm_hrf_{physio_label}_contrast_{contrast_name}_metadata.pkl', 'wb')
-                )
+
 
 def _pca(
     dataset: str,
@@ -694,19 +534,12 @@ def _pca(
     pca_loadings = ds.to_4d(pca_results.loadings.T)
     if dataset == "euskalibur":
         nib.nifti1.save(pca_loadings, f'{OUT_DIRECTORY}/sub-{subject}_{task}_pca_loadings.nii.gz')
-    elif dataset == "hcp":
-        nib.nifti1.save(pca_loadings, f'{OUT_DIRECTORY}/hcp_{task}_pca_loadings.nii.gz')
-    # write pca metadata (including pc scores, exp var, etc.) to pickle file
-    if dataset == "euskalibur":
+        # write pca metadata (including pc scores, exp var, etc.) to pickle file
         pickle.dump(
             pca_results,
             open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_pca_metadata.pkl', 'wb')
         )
-    elif dataset == "hcp":
-        pickle.dump(
-            pca_results,
-            open(f'{OUT_DIRECTORY}/hcp_{task}_pca_metadata.pkl', 'wb')
-        )
+
 
 
 def _pls(
@@ -738,8 +571,7 @@ def _pls(
     print(f'Performing PLS on dataset {dataset}, subject {subject}, task {task}')
     if dataset == 'euskalibur':
         physio_lags = 11
-    elif dataset == 'hcp':
-        physio_lags = 20
+
     # estimate PLS with 10 components
     pls = PLSEventPhysioModel(
         tr=tr,
@@ -762,11 +594,6 @@ def _pls(
         pickle.dump(
             pls_res,
             open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_pls_metadata.pkl', 'wb')
-        )
-    elif dataset == "hcp":
-        pickle.dump(
-            pls_res,
-            open(f'{OUT_DIRECTORY}/hcp_{task}_pls_metadata.pkl', 'wb')
         )
 
 def _rrr(
@@ -802,8 +629,7 @@ def _rrr(
     print(f'Performing RRR on subject dataset {dataset}, subject {subject}, task {task}')
     if dataset == 'euskalibur':
         physio_lags = 11
-    elif dataset == 'hcp':
-        physio_lags = 20
+
     # estimate RRR with 10 components
     rrr = RRREventPhysioModel(
         tr=tr,
@@ -827,11 +653,6 @@ def _rrr(
             rrr_res,
             open(f'{OUT_DIRECTORY}/sub-{subject}_{task}_rrr_metadata.pkl', 'wb')
         )
-    elif dataset == "hcp":
-        pickle.dump(
-            rrr_res,
-            open(f'{OUT_DIRECTORY}/hcp_{task}_rrr_metadata.pkl', 'wb')
-        )
 
 
 if __name__ == '__main__':
@@ -843,8 +664,9 @@ if __name__ == '__main__':
         '-d',
         '--dataset',
         type=str,
-        required=True,
-        choices=['euskalibur', 'hcp'],
+        required=False,
+        default='euskalibur',
+        choices=['euskalibur'],
         help='Dataset to perform analysis pipeline on',
     )
     # add subject argument
@@ -854,7 +676,7 @@ if __name__ == '__main__':
         type=str,
         default=None,
         required=False,
-        help='Subject to perform analysis pipeline. Required if dataset is euskalibur. Ignored for hcp dataset.',
+        help='Subject to perform analysis pipeline. Required if dataset is euskalibur.',
     )
     # add optional analysis argument (default: all analyses)
     parser.add_argument(

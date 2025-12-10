@@ -10,7 +10,7 @@ from task_arousal.io.file import get_dataset_subjects
 from task_arousal.preprocess.pipeline import PreprocessingPipeline
 
 
-def main(dataset: Literal['hcp', 'euskalibur'], subject: str | None = None):
+def main(dataset: Literal['euskalibur'], subject: str | None = None):
     """Perform full preprocessing pipeline on selected subject or all subjects."""
     # loop through tasks and preprocess
     if subject is None:
@@ -26,17 +26,9 @@ def main(dataset: Literal['hcp', 'euskalibur'], subject: str | None = None):
             for task in pipeline.tasks:
                 print(f'Preprocessing task: {task} for subject: {subject}')
                 pipeline.preprocess(task=task, save_physio_figs=True)
+    else:
+        raise ValueError(f'Unsupported dataset: {dataset}')
                 
-    # preprocess by task for HCP
-    elif dataset == 'hcp':
-        assert isinstance(subjects, dict), 'For HCP, subjects should be a dictionary of tasks as keys and list of subject IDs as values.'
-        tasks = subjects.keys()
-        # loop through tasks and subjects
-        for task in tasks:
-            for subject in subjects[task]:
-                pipeline = PreprocessingPipeline(dataset, subject)
-                print(f'Preprocessing task: {task} for subject: {subject}')
-                pipeline.preprocess(task=task, save_physio_figs=True)
     return
 
 
@@ -49,9 +41,9 @@ if __name__ == '__main__':
         '-d',
         '--dataset',
         type=str,
-        required=True,
-        default=None,
-        choices=['hcp', 'euskalibur'],
+        required=False,
+        default='euskalibur',
+        choices=['euskalibur'],
         help='Dataset to perform preprocessing pipeline.',
     )
     parser.add_argument(

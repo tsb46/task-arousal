@@ -33,12 +33,10 @@ from scipy.stats import zscore
 
 from task_arousal.constants import (
     MASK_EUSKALIBUR,
-    MASK_HCP, 
     TR_EUSKALIBUR,
-    TR_HCP,
     SLICE_TIMING_REF
 )
-from task_arousal.io.file import FileMapperEuskalibur, FileMapperHCP
+from task_arousal.io.file import FileMapperEuskalibur
 from task_arousal.preprocess.physio_features import (
     extract_ppg_features, 
     extract_resp_features,
@@ -54,10 +52,8 @@ DUMMY_VOLUMES_HCP = 0
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
 FWHM_EUSKALIBUR = 4  # in mm
-FWHM_HCP = 5  # in mm
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
-PHYSIO_COLUMNS_HCP = ['respiratory_effort', 'cardiac']
 # physiological resample frequency (in Hz)
 PHYSIO_RESAMPLE_F = 50
 
@@ -68,23 +64,23 @@ class PreprocessingPipeline:
     """
     def __init__(
         self, 
-        dataset: Literal['hcp', 'euskalibur'], 
+        dataset: Literal['euskalibur'], 
         subject: str
     ):
         """Initialize the preprocessing pipeline for a specific dataset and subject.
 
         Parameters
         ----------
-            dataset (Literal['hcp', 'euskalibur']): The dataset identifier.
+            dataset (Literal['euskalibur']): The dataset identifier.
             subject (str): The subject identifier.
         """
         self.subject = subject
         self.dataset = dataset
         # map file paths associated to subject
-        if dataset == 'hcp':
-            self.file_mapper = FileMapperHCP(subject)
-        elif dataset == 'euskalibur':
+        if dataset == 'euskalibur':
             self.file_mapper = FileMapperEuskalibur(subject)
+        else:
+            raise ValueError(f"Dataset '{dataset}' is not supported.")
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
 
@@ -165,21 +161,9 @@ class PreprocessingPipeline:
                     # find matching fmri file to get number of volumes for resampling
                     # different techniques based on dataset
                     if self.dataset == 'euskalibur':
-                        file_entities = self.file_mapper.layout.parse_file_entities(physio_file[0]) # type: ignore
+                        file_entities = self.file_mapper.layout.parse_file_entities(physio_file[0]) 
                         matching_fmri_files = self.file_mapper.get_matching_files(file_entities, 'fmri')
-                    elif self.dataset == 'hcp':
-                        if 'LR' in physio_file[0]:
-                            run_id = 'LR'
-                        elif 'RL' in physio_file[0]:
-                            run_id = 'RL'
-                        else:
-                            raise ValueError(
-                                f"Cannot determine run from physiological file name '{physio_file[0]}'."
-                            )
-                        # for HCP, match based on task and run
-                        matching_fmri_files = self.file_mapper.get_matching_files(
-                            {'task': task_proc, 'run': run_id}, 'fmri'
-                        )
+
                     if len(matching_fmri_files) == 0:
                         # in some scenarios, physio may be recorded but no usable fMRI data
                         if verbose:
@@ -229,11 +213,8 @@ class PreprocessingPipeline:
             file_new_name = file_orig_name.rstrip('preproc_bold.nii.gz')
             # add 'desc-preprocfinal_bold.nii.gz' to file name
             file_new = f"{file_new_name}preprocfinal_bold.nii.gz"
-        elif self.dataset == 'hcp':
-            # strip 'preproc_bold.nii.gz' from file name
-            file_new_name = file_orig_name.rstrip('.nii.gz')
-            # add 'preprocfinal_bold.nii.gz' to file name
-            file_new = f"{file_new_name}_preproc.nii.gz"
+        else:
+            raise ValueError(f"Dataset '{self.dataset}' is not supported for fMRI output.")
         output_path = f"{output_dir}/{file_new}"
         nib.nifti1.save(fmri_img, output_path)
 
@@ -259,11 +240,8 @@ class PreprocessingPipeline:
             file_new_name = file_orig_name.rstrip('physio.tsv.gz')
             # add 'desc-preproc_physio.tsv.gz' to file name
             file_new = f"{file_new_name}desc-preproc_physio.tsv.gz"
-        elif self.dataset == 'hcp':
-            # strip '.txt' from file name
-            file_new_name = file_orig_name.rstrip('.txt')
-            # add '_preproc_physio.tsv.gz' to file name
-            file_new = f"{file_new_name}_physio_prepoc.tsv.gz"
+        else:
+            raise ValueError(f"Dataset '{self.dataset}' is not supported for physiological output.")
         # write out as tsv.gz with pandas
         physio_df.to_csv(
             f"{output_dir}/{file_new}", 
@@ -279,7 +257,6 @@ def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nif
 
     Preprocessing steps:
     
-    ( if HCP, first resample fmri to 3mm to match mask )
     1) Drop dummy volumes
     2) Detrending
     3) High-pass filtering (> 0.01 Hz)
@@ -300,23 +277,20 @@ def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nif
     """
     # select mask based on dataset
     if dataset == 'euskalibur':
-        MASK = MASK_EUSKALIBUR
-    elif dataset == 'hcp':
-        MASK = MASK_HCP
-
-    # select FWHM based on dataset
-    if dataset == 'euskalibur':
-        FWHM = FWHM_EUSKALIBUR
-    elif dataset == 'hcp':
-        FWHM = FWHM_HCP
+        mask = MASK_EUSKALIBUR
+        fwhm = FWHM_EUSKALIBUR
+        dummy_n = DUMMY_VOLUMES_EUSKALIBUR
+        tr = TR_EUSKALIBUR
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
 
     # Load functional MRI data
     func_img = nib.nifti1.load(func_fp)
 
     # load mask
-    mask_img = nib.nifti1.load(MASK)
+    mask_img = nib.nifti1.load(mask)
 
-    # downsample HCP data to 3mm
+    # downsample data to mask resolution, assumes func is in same space as mask
     if resample:
         func_img = resample_img(
             func_img,
@@ -330,13 +304,6 @@ def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nif
     # ensure is nifti.nifti1.Nifti1Image
     assert isinstance(func_img, nib.nifti1.Nifti1Image), "Loaded fMRI data is not a Nifti1Image."
 
-    # drop dummy volumes (number depends on dataset)
-    if dataset == 'euskalibur':
-        dummy_n = DUMMY_VOLUMES_EUSKALIBUR
-        tr = TR_EUSKALIBUR
-    elif dataset == 'hcp':
-        dummy_n = DUMMY_VOLUMES_HCP
-        tr = TR_HCP
     func_img_proc = _func_trim(func_img, dummy_n)
 
     # using the clean_img function to detrend, high-pass filter, and standardize the signal
@@ -345,14 +312,14 @@ def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nif
         detrend=True, 
         standardize=True,
         high_pass=HIGHPASS,
-        mask_img=MASK,
+        mask_img=mask_img,
         t_r=tr
     )
     # ensure nifti after clean_img
     assert isinstance(func_img_proc, nib.nifti1.Nifti1Image), "clean_img did not return a Nifti1Image."
 
     # Apply spatial smoothing
-    func_img_proc = _func_smooth(func_img_proc, fwhm=FWHM)
+    func_img_proc = _func_smooth(func_img_proc, fwhm=fwhm)
 
     # Mask out smoothed data to ensure non-brain voxels are zero
     func_data_masked = apply_mask(func_img_proc, mask_img)
@@ -408,8 +375,11 @@ def physio_pipeline(
     # get number of time points in fMRI data after dummy volume removal
     if dataset == 'euskalibur':
         dummy_n = DUMMY_VOLUMES_EUSKALIBUR
-    elif dataset == 'hcp':
-        dummy_n = DUMMY_VOLUMES_HCP
+        physio_columns = PHYSIO_COLUMNS_EUSKALIBUR
+        tr = TR_EUSKALIBUR
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
+    
     fmri_n_tp = fmri_img.shape[-1] - dummy_n # type: ignore
     # define function for feature extraction based on column name
     feature_extraction_funcs = {
@@ -418,13 +388,7 @@ def physio_pipeline(
         'respiratory_CO2': extract_resp_co2_features,
         'respiratory_O2': extract_resp_o2_features,
     }
-    # select physio columns based on dataset
-    if dataset == 'euskalibur':
-        physio_columns = PHYSIO_COLUMNS_EUSKALIBUR
-    elif dataset == 'hcp':
-        physio_columns = PHYSIO_COLUMNS_HCP
-    else:
-        raise ValueError(f"Unknown dataset: {dataset}")
+
     # loop through physio columns and extract features
     physio_data_proc = {}
     for col in physio_columns:
@@ -440,8 +404,6 @@ def physio_pipeline(
             # save figure of resampled physio signal
             if dataset == 'euskalibur':
                 fig_fp = physio_fp.replace('.tsv.gz', f'_{col}.png')
-            elif dataset == 'hcp':
-                fig_fp = physio_fp.replace('.txt', f'_{col}.png')
 
             _physio_write_image(
                 fp_out=fig_fp, 
@@ -455,10 +417,6 @@ def physio_pipeline(
             physio_features = feature_extraction_funcs[col](physio_resampled, PHYSIO_RESAMPLE_F)
             # loop through features and resample to fMRI time points
             for feat_name, feat_ts in physio_features.items():
-                if dataset == 'euskalibur':
-                    tr = TR_EUSKALIBUR
-                elif dataset == 'hcp':
-                    tr = TR_HCP
                 # first, low-pass filter the time series to avoid aliasing
                 feat_ts_lowpass = nk.signal_filter(
                     feat_ts,
@@ -546,22 +504,13 @@ def load_physio(dataset: str, physio_fp: str, physio_json: str | None) -> Tuple[
         if physio_json is None:
             raise ValueError("Euskalibur dataset requires a JSON sidecar for physiological data.")
         physio_df, sampling_freq = _load_physio_euskalibur(physio_fp, physio_json)
-    elif dataset == 'hcp':
-        physio_data = np.loadtxt(physio_fp)
-        physio_df = pd.DataFrame({
-            'respiratory_effort': physio_data[:,1],
-            'cardiac': physio_data[:,2]
-        })
-        # HCP physio has fixed sampling frequency of 400Hz
-        sampling_freq = 400.0
-
-    # trim physio signals to match removal of fMRI dummy volumes
-    if dataset == 'euskalibur':
+        # set constants
         tr = TR_EUSKALIBUR
         dummy_n = DUMMY_VOLUMES_EUSKALIBUR
-    elif dataset == 'hcp':
-        tr = TR_HCP
-        dummy_n = DUMMY_VOLUMES_HCP
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
+
+    # trim physio signals to match removal of fMRI dummy volumes
     physio_df = _trim_physio_signals_dummy(
         physio_df, dummy_n, tr, sampling_freq
     )

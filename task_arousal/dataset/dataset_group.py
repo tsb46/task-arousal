@@ -10,9 +10,8 @@ import numpy as np
 import pandas as pd
 
 from task_arousal.io.file import get_dataset_subjects
-from .dataset_hcp import DatasetHCPSubject
 from .dataset_euskalibur import DatasetEuskalibur
-from task_arousal.constants import MASK_HCP, MASK_EUSKALIBUR
+from task_arousal.constants import MASK_EUSKALIBUR
 from .dataset_utils import to_4d as _to_4d, DatasetLoad
 
 
@@ -29,7 +28,7 @@ class GroupDataset:
 
     def __init__(
         self,
-        dataset: Literal['euskalibur', 'hcp'],
+        dataset: Literal['euskalibur'],
         subjects: List[str] | None = None,
         subject_loader_factory: Callable[[str], SubjectLoader] | None = None,
         verbose: bool = True,
@@ -39,7 +38,7 @@ class GroupDataset:
 
         Parameters
         ----------
-        dataset : {'euskalibur', 'hcp'}
+        dataset : {'euskalibur'}
             Dataset name.
         subjects : List[str] | None
             List of subject IDs to load. If None, loads all subjects in the dataset.
@@ -59,13 +58,11 @@ class GroupDataset:
         if subject_loader_factory is not None:
             self._factory = subject_loader_factory
         else:
-            if dataset == 'hcp':
-                self._factory = lambda s: DatasetHCPSubject(s)
-            elif dataset == 'euskalibur':
+            if dataset == 'euskalibur':
                 self._factory = lambda s: DatasetEuskalibur(s)
             else:
-                raise ValueError("Unsupported dataset: must be 'euskalibur' or 'hcp'")
-
+                raise ValueError("Unsupported dataset: must be 'euskalibur'")
+            
     def load_data(
         self,
         task: str,
@@ -105,18 +102,10 @@ class GroupDataset:
         kwargs :
             Forwarded to subject.load_data(...).
         """
-        # if dataset is hcp, get subject list for the specific task
-        if self.dataset == 'hcp' and isinstance(self.subjects, dict):
-            if task in self.subjects:
-                subjects = self.subjects[task]
-            else:
-                raise ValueError(f"Task {task} not found in HCP subject list.")
-        else:
-            subjects = self.subjects
             
         if stream:
             def _stream():
-                for subj in subjects:
+                for subj in self.subjects:
                     try:
                         loader = self._factory(subj)
                         result = loader.load_data(
@@ -143,7 +132,7 @@ class GroupDataset:
                 "physio": [],
                 "events": []
             }
-            for subj in subjects:
+            for subj in self.subjects:
                 try:
                     loader = self._factory(subj)
                     result = loader.load_data(
@@ -206,8 +195,8 @@ class GroupDataset:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        if self.dataset == 'hcp':
-            return _to_4d(fmri_data, MASK_HCP) # type: ignore
-        elif self.dataset == 'euskalibur':
+        if self.dataset == 'euskalibur':
             return _to_4d(fmri_data, MASK_EUSKALIBUR) # type: ignore
+        else:
+            raise ValueError("Unsupported dataset for to_4d conversion.")
         return _to_4d(fmri_data, self.mask) # type: ignore
