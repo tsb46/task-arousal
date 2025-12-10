@@ -1,7 +1,8 @@
 """
 Preprocessing pipeline for fMRI and physiological data.
 
-fMRI preprocessing is performed on outputs from fMRIPrep, including:
+fMRI preprocessing is performed on outputs from fMRIPrep for EuskalIBUR and minimal preprocessing
+pipeline for HCP, including:
 
 1) Drop dummy volumes
 2) Detrending
@@ -18,7 +19,7 @@ Physio preprocessing is performed on raw physiological data, including:
 import json
 import os
 
-from typing import Tuple
+from typing import Tuple, Literal
 
 import matplotlib.pyplot as plt
 import nibabel as nib
@@ -26,12 +27,16 @@ import neurokit2 as nk
 import numpy as np
 import pandas as pd
 
-from nilearn.image import clean_img, smooth_img
+from nilearn.image import clean_img, smooth_img, resample_img
 from nilearn.masking import apply_mask, unmask
 from scipy.stats import zscore
 
-from task_arousal.constants import MASK, TR, SLICE_TIMING_REF
-from task_arousal.io.file import FileMapper
+from task_arousal.constants import (
+    MASK_EUSKALIBUR,
+    TR_EUSKALIBUR,
+    SLICE_TIMING_REF
+)
+from task_arousal.io.file import FileMapperEuskalibur
 from task_arousal.preprocess.physio_features import (
     extract_ppg_features, 
     extract_resp_features,
@@ -41,13 +46,14 @@ from task_arousal.preprocess.physio_features import (
 
 ## Preprocessing parameters
 # Number of dummy volumes to drop 
-DUMMY_VOLUMES = 10
+DUMMY_VOLUMES_EUSKALIBUR = 10
+DUMMY_VOLUMES_HCP = 0
 # High-pass filter cutoff frequency for fmri
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
-FWHM = 4  # in mm
+FWHM_EUSKALIBUR = 4  # in mm
 # physio fields to extract from raw data
-PHYSIO_COLUMNS = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
+PHYSIO_COLUMNS_EUSKALIBUR = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
 # physiological resample frequency (in Hz)
 PHYSIO_RESAMPLE_F = 50
 
@@ -56,16 +62,25 @@ class PreprocessingPipeline:
     """
     Preprocessing pipeline for fMRI and physiological data.
     """
-    def __init__(self, subject: str):
-        """Initialize the preprocessing pipeline.
+    def __init__(
+        self, 
+        dataset: Literal['euskalibur'], 
+        subject: str
+    ):
+        """Initialize the preprocessing pipeline for a specific dataset and subject.
 
         Parameters
         ----------
+            dataset (Literal['euskalibur']): The dataset identifier.
             subject (str): The subject identifier.
         """
         self.subject = subject
+        self.dataset = dataset
         # map file paths associated to subject
-        self.file_mapper = FileMapper(subject)
+        if dataset == 'euskalibur':
+            self.file_mapper = FileMapperEuskalibur(subject)
+        else:
+            raise ValueError(f"Dataset '{dataset}' is not supported.")
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
 
@@ -112,7 +127,7 @@ class PreprocessingPipeline:
             print(f"Processing tasks for subject '{self.subject}': {tasks_to_process}")
 
         # loop through each task and process scans and physio from all sessions (and runs)
-        for task in tasks_to_process:
+        for task_proc in tasks_to_process:
             if verbose:
                 print(
                     f"Processing task '{task}' for subject '{self.subject}' "
@@ -122,28 +137,33 @@ class PreprocessingPipeline:
             # functional MRI preprocessing
             if not skip_func:
                 # get fmri files for task
-                fmri_files = self.file_mapper.get_fmri_files(task, sessions=sessions)
+                fmri_files = self.file_mapper.get_fmri_files(task_proc, sessions=sessions)
                 # loop through fmri files and preprocess
                 for fmri_file in fmri_files:
                     if verbose:
                         print(f"Preprocessing fMRI file: {fmri_file}")
+                    # if hcp, resample to 3mm to match mask
+                    resample = True if self.dataset == 'hcp' else False
                     # Apply the functional MRI preprocessing pipeline
-                    fmri_proc = func_pipeline(fmri_file)
+                    fmri_proc = func_pipeline(self.dataset, fmri_file, resample=resample)
                     # Write out the preprocessed fMRI file
                     self.write_out_fmri_file(fmri_proc, fmri_file)
 
             # physio preprocessing pipeline
             if not skip_physio:
                 # get physio files (and JSON sidecars) for task
-                physio_files = self.file_mapper.get_physio_files(task, return_json=True, sessions=sessions)
+                physio_files = self.file_mapper.get_physio_files(task_proc, return_json=True, sessions=sessions)
                 # loop through physio files and preprocess
                 for physio_file in physio_files:
                     if verbose:
                         print(f"Preprocessing physiological file: {physio_file[0]}")
 
                     # find matching fmri file to get number of volumes for resampling
-                    file_entities = self.file_mapper.layout.parse_file_entities(physio_file[0])
-                    matching_fmri_files = self.file_mapper.get_matching_files(file_entities, 'fmri')
+                    # different techniques based on dataset
+                    if self.dataset == 'euskalibur':
+                        file_entities = self.file_mapper.layout.parse_file_entities(physio_file[0]) 
+                        matching_fmri_files = self.file_mapper.get_matching_files(file_entities, 'fmri')
+
                     if len(matching_fmri_files) == 0:
                         # in some scenarios, physio may be recorded but no usable fMRI data
                         if verbose:
@@ -161,6 +181,7 @@ class PreprocessingPipeline:
 
                     # Apply the physiological preprocessing pipeline
                     physio_proc = physio_pipeline(
+                        dataset=self.dataset,
                         physio_fp=physio_file[0], 
                         physio_json=physio_file[1],  
                         fmri_fp=matching_fmri_file, 
@@ -172,12 +193,12 @@ class PreprocessingPipeline:
             if verbose:
                 print(f"Finished processing task '{task}' for subject '{self.subject}'.")
 
-    def write_out_fmri_file(self, fmri_img: nib.Nifti1Image, file_orig: str) -> None: # type: ignore
+    def write_out_fmri_file(self, fmri_img: nib.nifti1.Nifti1Image, file_orig: str) -> None:
         """Write out the preprocessed fMRI file.
 
         Parameters
         ----------
-        fmri_img : nib.Nifti1Image
+        fmri_img : nib.nifti1.Nifti1Image
             The preprocessed fMRI image.
         file_orig : str
             The original file path
@@ -186,13 +207,17 @@ class PreprocessingPipeline:
         output_dir = self.file_mapper.get_out_directory(file_orig)
         # get file name from original file path
         file_orig_name = os.path.basename(file_orig)
-        # strip 'preproc_bold.nii.gz' from file name
-        file_new_name = file_orig_name.rstrip('preproc_bold.nii.gz')
-        # add 'preprocfinal_bold.nii.gz' to file name
-        file_new = f"{file_new_name}preprocfinal_bold.nii.gz"
+        # separate logic for euskalibur and hcp datasets
+        if self.dataset == 'euskalibur':
+            # strip 'preproc_bold.nii.gz' from file name
+            file_new_name = file_orig_name.rstrip('preproc_bold.nii.gz')
+            # add 'desc-preprocfinal_bold.nii.gz' to file name
+            file_new = f"{file_new_name}preprocfinal_bold.nii.gz"
+        else:
+            raise ValueError(f"Dataset '{self.dataset}' is not supported for fMRI output.")
         output_path = f"{output_dir}/{file_new}"
-        nib.save(fmri_img, output_path) # type: ignore
-    
+        nib.nifti1.save(fmri_img, output_path)
+
     def write_out_physio_file(self, physio_dict: dict[str, np.ndarray], file_orig: str) -> None:
         """Write out the preprocessed physiological file.
 
@@ -209,10 +234,14 @@ class PreprocessingPipeline:
         output_dir = self.file_mapper.get_out_directory(file_orig)
         # get file name from original file path
         file_orig_name = os.path.basename(file_orig)
-        # strip 'physio.tsv.gz' from file name
-        file_new_name = file_orig_name.rstrip('physio.tsv.gz')
-        # add 'desc-preproc_physio.tsv.gz' to file name
-        file_new = f"{file_new_name}desc-preproc_physio.tsv.gz"
+        # separate logic for euskalibur and hcp datasets
+        if self.dataset == 'euskalibur':
+            # strip 'physio.tsv.gz' from file name
+            file_new_name = file_orig_name.rstrip('physio.tsv.gz')
+            # add 'desc-preproc_physio.tsv.gz' to file name
+            file_new = f"{file_new_name}desc-preproc_physio.tsv.gz"
+        else:
+            raise ValueError(f"Dataset '{self.dataset}' is not supported for physiological output.")
         # write out as tsv.gz with pandas
         physio_df.to_csv(
             f"{output_dir}/{file_new}", 
@@ -222,12 +251,12 @@ class PreprocessingPipeline:
         )
 
 
-def func_pipeline(func_fp: str) -> nib.Nifti1Image: # type: ignore
+def func_pipeline(dataset: str, func_fp: str, resample: bool = False) -> nib.nifti1.Nifti1Image:
     """
     Function pipeline for processing functional MRI data.
 
     Preprocessing steps:
-
+    
     1) Drop dummy volumes
     2) Detrending
     3) High-pass filtering (> 0.01 Hz)
@@ -236,6 +265,8 @@ def func_pipeline(func_fp: str) -> nib.Nifti1Image: # type: ignore
 
     Parameters
     ----------
+    dataset : str
+        The dataset identifier.
     func_fp : str
         The file path to the functional MRI data.
 
@@ -244,11 +275,36 @@ def func_pipeline(func_fp: str) -> nib.Nifti1Image: # type: ignore
     nb.Nifti1Image
         The processed functional MRI data.
     """
-    # Load functional MRI data
-    func_img = nib.load(func_fp) # type: ignore
+    # select mask based on dataset
+    if dataset == 'euskalibur':
+        mask = MASK_EUSKALIBUR
+        fwhm = FWHM_EUSKALIBUR
+        dummy_n = DUMMY_VOLUMES_EUSKALIBUR
+        tr = TR_EUSKALIBUR
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
 
-    # drop dummy volumes
-    func_img_proc = _func_trim(func_img, DUMMY_VOLUMES) # type: ignore
+    # Load functional MRI data
+    func_img = nib.nifti1.load(func_fp)
+
+    # load mask
+    mask_img = nib.nifti1.load(mask)
+
+    # downsample data to mask resolution, assumes func is in same space as mask
+    if resample:
+        func_img = resample_img(
+            func_img,
+            target_affine=mask_img.affine,
+            target_shape=mask_img.shape[:3],
+            interpolation='continuous',
+            copy_header=True,
+            force_resample=True
+        )
+
+    # ensure is nifti.nifti1.Nifti1Image
+    assert isinstance(func_img, nib.nifti1.Nifti1Image), "Loaded fMRI data is not a Nifti1Image."
+
+    func_img_proc = _func_trim(func_img, dummy_n)
 
     # using the clean_img function to detrend, high-pass filter, and standardize the signal
     func_img_proc = clean_img(
@@ -256,25 +312,30 @@ def func_pipeline(func_fp: str) -> nib.Nifti1Image: # type: ignore
         detrend=True, 
         standardize=True,
         high_pass=HIGHPASS,
-        mask_img=MASK,
-        t_r=TR
+        mask_img=mask_img,
+        t_r=tr
     )
+    # ensure nifti after clean_img
+    assert isinstance(func_img_proc, nib.nifti1.Nifti1Image), "clean_img did not return a Nifti1Image."
 
     # Apply spatial smoothing
-    func_img_proc = _func_smooth(func_img_proc, fwhm=FWHM) # type: ignore
+    func_img_proc = _func_smooth(func_img_proc, fwhm=fwhm)
 
     # Mask out smoothed data to ensure non-brain voxels are zero
-    mask_img = nib.load(MASK) # type: ignore
     func_data_masked = apply_mask(func_img_proc, mask_img)
     func_img_proc = unmask(func_data_masked, mask_img)
-    
-    return func_img_proc # type: ignore
+
+    # ensure nifti after unmask
+    assert isinstance(func_img_proc, nib.nifti1.Nifti1Image), "unmask did not return a Nifti1Image."
+
+    return func_img_proc
 
 
 def physio_pipeline(
+    dataset: str,
     physio_fp: str, 
-    physio_json: str, 
-    fmri_fp: str, 
+    physio_json: str | None, 
+    fmri_fp: str,
     save_physio_figs: bool = False
 ) -> dict[str, np.ndarray]:
     """
@@ -290,10 +351,13 @@ def physio_pipeline(
 
     Parameters
     ----------
+    dataset : str
+        The dataset identifier.
     physio_fp : str
         The file path to the physiological data.
-    physio_json : str
-        The file path to the physiological JSON sidecar.
+    physio_json : str | None
+        The file path to the physiological JSON sidecar for euskalibur dataset. HCP physio 
+        does not have JSON sidecar.
     fmri_fp : str
         The file path to the functional MRI data (to get number of time points for resampling).
     save_physio_figs : bool, optional
@@ -305,10 +369,18 @@ def physio_pipeline(
         The processed physiological data.
     """
     # Load physiological data
-    physio_dict, physio_sf = _load_physio(physio_fp, physio_json)
+    physio_dict, physio_sf = load_physio(dataset, physio_fp, physio_json)
     # load fmri data
     fmri_img = nib.load(fmri_fp) # type: ignore
-    fmri_n_tp = fmri_img.shape[-1] - DUMMY_VOLUMES # type: ignore
+    # get number of time points in fMRI data after dummy volume removal
+    if dataset == 'euskalibur':
+        dummy_n = DUMMY_VOLUMES_EUSKALIBUR
+        physio_columns = PHYSIO_COLUMNS_EUSKALIBUR
+        tr = TR_EUSKALIBUR
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
+    
+    fmri_n_tp = fmri_img.shape[-1] - dummy_n # type: ignore
     # define function for feature extraction based on column name
     feature_extraction_funcs = {
         'respiratory_effort': extract_resp_features,
@@ -316,10 +388,11 @@ def physio_pipeline(
         'respiratory_CO2': extract_resp_co2_features,
         'respiratory_O2': extract_resp_o2_features,
     }
+
     # loop through physio columns and extract features
     physio_data_proc = {}
-    for col in PHYSIO_COLUMNS:
-        # physio has high sampling rate (1000Hz), so we can downsample to 50Hz
+    for col in physio_columns:
+        # physio has high sampling rate (1000Hz or 400Hz), so we can downsample to 50Hz
         # use polyphase filtering to avoid aliasing
         physio_resampled = nk.signal_resample(
             physio_dict[col], 
@@ -329,7 +402,9 @@ def physio_pipeline(
         )
         if save_physio_figs:
             # save figure of resampled physio signal
-            fig_fp = physio_fp.replace('.tsv.gz', f'_{col}.png')
+            if dataset == 'euskalibur':
+                fig_fp = physio_fp.replace('.tsv.gz', f'_{col}.png')
+
             _physio_write_image(
                 fp_out=fig_fp, 
                 ts=physio_resampled, # type: ignore
@@ -346,22 +421,22 @@ def physio_pipeline(
                 feat_ts_lowpass = nk.signal_filter(
                     feat_ts,
                     sampling_rate=PHYSIO_RESAMPLE_F,
-                    highcut=(1/(2*TR)) + 0.05, # slightly above nyquist frequency
+                    highcut=(1/(2*tr)) + 0.05, # slightly above nyquist frequency
                     method='butterworth',
                     order=4
                 )
                 # next, interpolate to fMRI time points
                 feat_ts_resampled = _physio_resample_to_fmri(
                     feat_ts_lowpass,
-                    physio_sf=PHYSIO_RESAMPLE_F, 
-                    fmri_n_tp=fmri_n_tp, 
-                    fmri_tr=TR,
+                    physio_sf=PHYSIO_RESAMPLE_F,
+                    fmri_n_tp=fmri_n_tp,
+                    fmri_tr=tr,
                     slicetiming_ref=SLICE_TIMING_REF
                 )
                 # finally, band-pass filter to match fMRI bandpass
                 feat_ts_bandpassed = nk.signal_filter(
                     feat_ts_resampled,
-                    sampling_rate=1/TR, # type: ignore
+                    sampling_rate=1/tr, # type: ignore
                     lowcut=HIGHPASS,
                     method='butterworth',
                     order=4
@@ -401,6 +476,52 @@ def _func_trim(func_img: nib.Nifti1Image, start: int) -> nib.Nifti1Image: # type
     return trimmed_img
 
 
+def load_physio(dataset: str, physio_fp: str, physio_json: str | None) -> Tuple[dict[str, list[float]], float]:
+    """
+    Load physiological data from a file (HCP or Euskalibur datasets), and trim to start and 
+    end from the first trigger.
+
+    Parameters
+    ----------
+    dataset : str
+        The dataset identifier.
+    physio_fp : str
+        The file path to the physiological data.
+    physio_json : str | None
+        The file path to the physiological JSON sidecar for the euskalibur dataset. HCP physio 
+        does not have JSON sidecar.
+
+    Returns
+    -------
+    dict[str, float]
+        A dictionary containing each physiological label as a key 
+        and its corresponding time series as a list of floats.
+    float
+        the sampling frequency of the physiological data.
+    """
+    # load physio data
+    if dataset == 'euskalibur':
+        if physio_json is None:
+            raise ValueError("Euskalibur dataset requires a JSON sidecar for physiological data.")
+        physio_df, sampling_freq = _load_physio_euskalibur(physio_fp, physio_json)
+        # set constants
+        tr = TR_EUSKALIBUR
+        dummy_n = DUMMY_VOLUMES_EUSKALIBUR
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
+
+    # trim physio signals to match removal of fMRI dummy volumes
+    physio_df = _trim_physio_signals_dummy(
+        physio_df, dummy_n, tr, sampling_freq
+    )
+    # convert to dict
+    try:
+        physio_dict = physio_df.to_dict(orient='list')
+    except KeyError as e:
+        raise ValueError(f"Missing expected column in physiological data: {e}")
+    return physio_dict, sampling_freq # type: ignore
+
+
 def _func_smooth(func_img: nib.Nifti1Image, fwhm: float) -> nib.Nifti1Image: # type: ignore
     """
     Apply smoothing to functional MRI data.
@@ -422,9 +543,12 @@ def _func_smooth(func_img: nib.Nifti1Image, fwhm: float) -> nib.Nifti1Image: # t
     return smoothed_img # type: ignore
 
 
-def _load_physio(physio_fp: str, physio_json: str) -> Tuple[dict[str, list[float]], float]:
+def _load_physio_euskalibur(
+    physio_fp: str, 
+    physio_json: str
+) -> Tuple[pd.DataFrame, float]:
     """
-    Load physiological data from a file, and trim to start and end from the first trigger.
+    Load physiological data from Euskalibur dataset.
 
     Parameters
     ----------
@@ -435,9 +559,8 @@ def _load_physio(physio_fp: str, physio_json: str) -> Tuple[dict[str, list[float
 
     Returns
     -------
-    dict[str, float]
-        A dictionary containing each physiological label as a key 
-        and its corresponding time series as a list of floats.
+    pd.DataFrame
+        The physiological data.
     float
         the sampling frequency of the physiological data.
     """
@@ -456,18 +579,10 @@ def _load_physio(physio_fp: str, physio_json: str) -> Tuple[dict[str, list[float
         sampling_freq = physio_json_data['SamplingFrequency']
     else:
         raise ValueError("SamplingFrequency not found in JSON sidecar.")
+
     # trim physio signals to start and end from first trigger
     physio_df = _trim_physio_signals_trigger(physio_df)
-    # trim physio signals to match removal of fMRI dummy volumes
-    physio_df = _trim_physio_signals_dummy(
-        physio_df, DUMMY_VOLUMES, TR, sampling_freq
-    )
-    # convert to dict
-    try:
-        physio_dict = physio_df[PHYSIO_COLUMNS].to_dict(orient='list')
-    except KeyError as e:
-        raise ValueError(f"Missing expected column in physiological data: {e}")
-    return physio_dict, sampling_freq # type: ignore
+    return physio_df[PHYSIO_COLUMNS_EUSKALIBUR].copy(), sampling_freq
 
 
 def _trim_physio_signals_trigger(

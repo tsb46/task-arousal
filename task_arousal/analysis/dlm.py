@@ -2,7 +2,7 @@
 Distributed lag modeling of physio signals, events, and fMRI data
 """
 from dataclasses import dataclass
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Tuple
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,7 @@ from scipy.stats import zscore
 from sklearn.metrics import r2_score
 from sklearn.linear_model import Ridge, LinearRegression
 
-from task_arousal.constants import TR, SLICE_TIMING_REF, EVENT_COLUMNS
+from task_arousal.constants import SLICE_TIMING_REF, EVENT_COLUMNS
 from task_arousal.analysis.utils import lag_mat, boxcar
 
 # define the resampling of the event time course for boxcar function (in seconds)
@@ -31,6 +31,7 @@ class DLMParams:
 
 @dataclass
 class DLMPredResults:
+    tr: float
     pred_outcome: np.ndarray
     dlm_params: DLMParams
     trial: str | None = None
@@ -38,7 +39,7 @@ class DLMPredResults:
 # dataclass for storing DLM commonality analysis parameters
 @dataclass
 class DLMCAParams:
-    event_lags: np.ndarray
+    event_lags: dict[str, int]
     physio_lags: int
     regressor_duration: float
     n_knots_event: int
@@ -48,6 +49,7 @@ class DLMCAParams:
 @dataclass
 class DLMCAResults:
     # store results of commonality analysis
+    tr: float
     dlm_params: DLMCAParams
     r2_full: np.ndarray
     r2_common: np.ndarray
@@ -57,20 +59,25 @@ class DLMCAResults:
 
 # dataclass for storing DLM interaction model parameters
 @dataclass
-class DLMTensorParams:
+class DLMInteractionParams:
     event_lags: np.ndarray
-    physio_lags: int
+    physio_lag: int
     regressor_duration: float
     n_knots_event: int
-    n_knots_physio: int
+    physio_val_low: float
+    physio_val_mid: float
+    physio_val_high: float
     basis_type: str
 
 
 @dataclass
-class DLMTensorResults:
+class DLMInteractionPredResults:
     # store results of commonality analysis
-    dlm_params: DLMTensorParams
-    interaction_surfaces: np.ndarray
+    tr: float
+    dlm_params: DLMInteractionParams
+    pred_outcome_high: np.ndarray
+    pred_outcome_low: np.ndarray
+    pred_outcome_mid: np.ndarray
 
 
 class SplineLagBasis:
@@ -186,6 +193,8 @@ class DistributedLagPhysioModel:
 
     Attributes
     ----------
+    tr: float
+        repetition time of the fMRI data (in seconds)
     nlags: int
         number of lags (shifts) of the physio signal in the forward direction
     nlags_neg: int
@@ -213,6 +222,7 @@ class DistributedLagPhysioModel:
     """
     def __init__(
         self,
+        tr: float,
         nlags: int,
         neg_nlags: int = 0,
         n_knots: int = 5,
@@ -220,6 +230,7 @@ class DistributedLagPhysioModel:
         basis: Literal['cr','bs'] = 'cr'
     ):
         # specify array of lags
+        self.tr = tr
         self.nlags = nlags
         if neg_nlags > 0:
             raise ValueError("neg_nlags must be a negative integer")
@@ -333,6 +344,7 @@ class DistributedLagPhysioModel:
         pred_func = self.glm.predict(physio_pred)
         # package output in container object
         dlm_pred = DLMPredResults(
+            tr = self.tr,
             pred_outcome = pred_func,
             dlm_params = DLMParams(
                 lag_max = lag_max,
@@ -355,10 +367,15 @@ class DistributedLagEventModel:
 
     Attributes
     ----------
-    regressor_duration: float
+    tr: float
+        repetition time of the fMRI data (in seconds)
+    regressor_duration: float | None
         duration of the spline regressors - i.e. the duration after onset of the event. This 
-        should be set around the expected duration of the hemodynamic response
-        to the event (default: 20.0 seconds).
+        should match the duration of the task block/event. If set to None, this will be regressor
+        duration will be set to the event duration from the event data. If you would like to
+        fix the regressor duration across all events, set this parameter to a float value. Defaults to None.
+        Note, that if regressor_duration is None, the number of lags (nlags) will vary across events. The spline
+        model assumes that the regressor duration is the same across all events of the same trial type.
     n_knots: int
         number of knots in the spline basis across temporal lags. Controls
         the temporal resolution of the basis, such that more knots results
@@ -373,11 +390,13 @@ class DistributedLagEventModel:
     """
     def __init__(
         self,
-        regressor_duration: float = 20.0,
+        tr: float,
+        regressor_duration: float | None = None,
         n_knots: int = 5,
         knots: List[int] | None = None,
         basis: Literal['cr','bs'] = 'cr'
     ):
+        self.tr = tr
         self.regressor_duration = regressor_duration
         self.n_knots = n_knots
         self.knots = knots
@@ -409,16 +428,6 @@ class DistributedLagEventModel:
         for i, df in enumerate(event_dfs):
             if not all(col in df.columns for col in EVENT_COLUMNS):
                 raise ValueError(f"Missing columns: {EVENT_COLUMNS} in dataframe {i}")
-        
-        # calculate number of lags based on regressor duration and TR
-        self.n_lags = int(np.ceil(self.regressor_duration / RESAMPLE_TR))
-        # create spline basis
-        self.basis = SplineLagBasis(
-            n_knots=self.n_knots,
-            knots=self.knots,
-            basis_type=self.basis_type # type: ignore
-        )
-        self.basis.create(self.n_lags, neg_nlags=0)
 
         # get trial types from first event df
         self.trial_types = event_dfs[0]['trial_type'].unique().tolist()
@@ -432,40 +441,20 @@ class DistributedLagEventModel:
         self.event_reg_cols = [
             f"{trial}_lag_spline{n+1}"
             for trial in self.trial_types
-            for n in range(self.basis.basis.shape[1])
+            for n in range(self.n_knots)
         ]
+
         # create event regressors for each session/run
-        self.event_regs = []
-        for i, (event_df, outcome_d) in enumerate(zip(event_dfs, outcome_data)):
-            n_vols = outcome_d.shape[0]
-            # create boxcar event regressor resampled at RESAMPLE_TR
-            event_reg, frametimes, h_frametimes = boxcar(
-                event_df,
-                tr=TR,
-                resample_tr=RESAMPLE_TR,
-                n_vols=n_vols,
-                slicetime_ref=SLICE_TIMING_REF,
-                trial_types=self.trial_types,
-                impulse_dur=0.5
-            )
-            # project each trial event regressor onto spline basis
-            events_regs_trial = []
-            for t, trial in enumerate(self.trial_types):
-                # project event regressor onto spline basis
-                # fill in NaNs with 0 to keep same length
-                event_reg_proj = self.basis.project(event_reg[t], fill_val=0.0)
-                # downsample (interpolate) event regressor to match fmri times
-                interp_func = interp1d(
-                    h_frametimes,
-                    event_reg_proj.T,
-                    kind='cubic'
-                )
-                event_reg_proj = interp_func(frametimes).T
-                # trim fmri_img and event_reg to same length
-                events_regs_trial.append(event_reg_proj)
-            # create design matrix by concatenating trial event regressors
-            event_regs_trial = np.hstack(events_regs_trial)
-            self.event_regs.append(event_regs_trial)
+        self.event_regs, self.nlags, self.basis = _create_spline_event_reg(
+            event_dfs=event_dfs, 
+            outcome_data=outcome_data,
+            trial_types=self.trial_types, 
+            tr=self.tr, 
+            n_knots=self.n_knots, 
+            knots=self.knots, 
+            basis_type=self.basis_type, 
+            regressor_duration=self.regressor_duration
+        )
 
         # concatenate outcome data across sessions/runs
         outcome_concat = np.vstack(outcome_data)
@@ -473,7 +462,6 @@ class DistributedLagEventModel:
         event_regs_concat = np.vstack(self.event_regs)
         # zscore event regressors
         event_regs_concat = np.array(zscore(event_regs_concat, axis=0))
-
         # fit Ridge regression model
         self.glm = Ridge(fit_intercept=False, alpha=1.0)
         self.glm.fit(
@@ -510,10 +498,10 @@ class DistributedLagEventModel:
             raise ValueError(f"trial must be one of {self.trial_types}")
 
         # specify lags for prediction (number of samples set by n_eval )
-        pred_lags = np.linspace(0, self.n_lags, n_eval)
+        pred_lags = np.linspace(0, self.nlags[trial], n_eval)
         # project lag vector onto B-spline basis
         pred_basis = dmatrix(
-            self.basis.basis.design_info,
+            self.basis[trial].basis.design_info,
             {'x': pred_lags.reshape(-1, 1)}
         )
         # project prediction value on lag B-spline basis
@@ -524,7 +512,7 @@ class DistributedLagEventModel:
         event_pred = np.vstack(event_pred).T
         # create full event regressor with zeros for other trial types
         n_total_regs = len(self.event_reg_cols)
-        n_trial_regs = self.basis.basis.shape[1]
+        n_trial_regs = self.basis[trial].basis.shape[1]
         trial_start_idx = self.event_reg_cols.index(f"{trial}_lag_spline1")
         event_pred_full = np.zeros((event_pred.shape[0], n_total_regs))
         event_pred_full[:, trial_start_idx:trial_start_idx+n_trial_regs] = event_pred
@@ -532,10 +520,11 @@ class DistributedLagEventModel:
         pred_func = self.glm.predict(event_pred_full)
         # package output in container object
         dlm_pred = DLMPredResults(
+            tr = self.tr,
             pred_outcome = pred_func,
             trial = trial,
             dlm_params = DLMParams(
-                lag_max = self.n_lags,
+                lag_max = self.nlags[trial],
                 lag_min = 0,
                 n_eval = n_eval,
                 pred_val = pred_val,
@@ -554,6 +543,8 @@ class DistributedLagCommonalityAnalysis:
 
     Attributes
     ----------
+    tr: float
+        repetition time of the fMRI data (in seconds)
     physio_lag: int
         The chosen lag (in TRs) to include for the physiological regressor. Defaults to 5.
     regressor_duration: float
@@ -581,6 +572,7 @@ class DistributedLagCommonalityAnalysis:
     """
     def __init__(
         self,
+        tr: float,
         physio_lags: int = 10,
         regressor_duration: float = 20.0,
         n_knots_event: int = 5,
@@ -589,6 +581,7 @@ class DistributedLagCommonalityAnalysis:
         event_knots: List[int] | None = None,
         basis: Literal['cr','bs'] = 'cr'
     ):
+        self.tr = tr
         self.physio_lags = physio_lags
         self.regressor_duration = regressor_duration
         self.n_knots_event = n_knots_event
@@ -640,16 +633,6 @@ class DistributedLagCommonalityAnalysis:
         for i, df in enumerate(event_dfs):
             if not all(col in df.columns for col in EVENT_COLUMNS):
                 raise ValueError(f"Missing columns: {EVENT_COLUMNS} in dataframe {i}")
-        
-        # calculate number of lags based on regressor duration and TR
-        self.n_lags_event = int(np.ceil(self.regressor_duration / RESAMPLE_TR))
-        # create spline basis for event regressors
-        self.basis_event = SplineLagBasis(
-            n_knots=self.n_knots_event,
-            knots=self.event_knots,
-            basis_type=self.basis_type # type: ignore
-        )
-        self.basis_event.create(self.n_lags_event, neg_nlags=0)
 
         # get trial types from first event df
         self.trial_types = event_dfs[0]['trial_type'].unique().tolist()
@@ -663,44 +646,20 @@ class DistributedLagCommonalityAnalysis:
         self.event_reg_cols = [
             f"{trial}_lag_spline{n+1}"
             for trial in self.trial_types
-            for n in range(self.basis_event.basis.shape[1])
+            for n in range(self.n_knots_event)
         ]
+
         # create event regressors for each session/run
-        self.event_regs = []
-        for i, (event_df, outcome_d) in enumerate(zip(event_dfs, fmri_data)):
-            n_vols = outcome_d.shape[0]
-            # create boxcar event regressor resampled at RESAMPLE_TR
-            event_reg, frametimes, h_frametimes = boxcar(
-                event_df,
-                tr=TR,
-                resample_tr=RESAMPLE_TR,
-                n_vols=n_vols,
-                slicetime_ref=SLICE_TIMING_REF,
-                trial_types=self.trial_types,
-                impulse_dur=0.5
-            )
-            # project each trial event regressor onto spline basis
-            events_regs_trial = []
-            for t, trial in enumerate(self.trial_types):
-                # project event regressor onto spline basis
-                # fill in NaNs with 0 to keep same length
-                event_reg_proj = self.basis_event.project(event_reg[t], fill_val=0.0)
-                # downsample (interpolate) event regressor to match fmri times
-                interp_func = interp1d(
-                    h_frametimes,
-                    event_reg_proj.T,
-                    kind='cubic'
-                )
-                event_reg_proj = interp_func(frametimes).T
-                # z-score event regressor - for comparability with physio regressor
-                event_reg_proj = (
-                    (event_reg_proj - np.mean(event_reg_proj, axis=0)) / np.std(event_reg_proj, axis=0)
-                )
-                # trim fmri_img and event_reg to same length
-                events_regs_trial.append(event_reg_proj)
-            # create design matrix by concatenating trial event regressors
-            event_regs_trial = np.hstack(events_regs_trial)
-            self.event_regs.append(event_regs_trial)
+        self.event_regs, self.n_lags_event, self.basis_event = _create_spline_event_reg(
+            event_dfs=event_dfs, 
+            outcome_data=fmri_data,
+            trial_types=self.trial_types, 
+            tr=self.tr, 
+            n_knots=self.n_knots_event, 
+            knots=self.event_knots, 
+            basis_type=self.basis_type, 
+            regressor_duration=self.regressor_duration
+        )
         
         # create B-spline basis across lags of physio signal
         self.basis_physio = SplineLagBasis(
@@ -803,15 +762,86 @@ class DistributedLagCommonalityAnalysis:
         )
         return DLMCAResults(
             dlm_params = DLMCAParams(
-                event_lags = np.arange(0, self.n_lags_event+1),
+                event_lags = self.n_lags_event,
                 physio_lags = self.physio_lags,
                 regressor_duration = self.regressor_duration,
                 n_knots_event = self.n_knots_event,
                 n_knots_physio = self.n_knots_physio,
                 basis_type = self.basis_type,
             ),
+            tr = self.tr,
             r2_full = self.r2_full,
             r2_common = self.r2_common,
             r2_physio_unique = self.r2_physio_unique,
             r2_event_unique = self.r2_event_unique
         )
+
+
+def _create_spline_event_reg(
+        event_dfs: List[pd.DataFrame],
+        outcome_data: List[np.ndarray], 
+        tr: float,
+        trial_types: List[str],
+        regressor_duration: float | None,
+        n_knots: int,
+        knots: List[int] | None,
+        basis_type: str
+    ) -> Tuple[List[np.ndarray], Dict[str, int], Dict[str, SplineLagBasis]]:
+    """
+    Utility function to create spline regressors for the task onsets 
+    of each trial
+    """
+    # initialize basis metadata to be filled with trial-specific values
+    nlags = {}
+    basis = {}
+    # create event regressors for each session/run
+    event_regs = []
+    for i, (event_df, outcome_d) in enumerate(zip(event_dfs, outcome_data)):
+        n_vols = outcome_d.shape[0]
+        # create boxcar event regressor resampled at RESAMPLE_TR
+        event_reg, frametimes, h_frametimes = boxcar(
+            event_df,
+            tr=tr,
+            resample_tr=RESAMPLE_TR,
+            n_vols=n_vols,
+            slicetime_ref=SLICE_TIMING_REF,
+            trial_types=trial_types,
+            impulse_dur=0.5
+        )
+        # project each trial event regressor onto spline basis
+        events_regs_trial = []
+        for t, trial in enumerate(trial_types):
+            # get regressor duration for this trial type
+            if regressor_duration is None:
+                # get max duration from event df for this trial type
+                trial_durations = event_df[event_df['trial_type'] == trial]['duration'].to_numpy()
+                max_duration = np.max(trial_durations)
+                regressor_dur = max_duration
+            else:
+                regressor_dur = regressor_duration
+            # calculate number of lags based on regressor duration and TR
+            nlags[trial] = int(np.ceil(regressor_dur / RESAMPLE_TR))
+            # create spline basis
+            basis[trial] = SplineLagBasis(
+                n_knots=n_knots,
+                knots=knots,
+                basis_type=basis_type # type: ignore
+            )
+            basis[trial].create(nlags[trial], neg_nlags=0)
+            # project event regressor onto spline basis
+            # fill in NaNs with 0 to keep same length
+            event_reg_proj = basis[trial].project(event_reg[t], fill_val=0.0)
+            # downsample (interpolate) event regressor to match fmri times
+            interp_func = interp1d(
+                h_frametimes,
+                event_reg_proj.T,
+                kind='cubic'
+            )
+            event_reg_proj = interp_func(frametimes).T                
+            # trim fmri_img and event_reg to same length
+            events_regs_trial.append(event_reg_proj)
+        # create design matrix by concatenating trial event regressors
+        event_regs_trial = np.hstack(events_regs_trial)
+        event_regs.append(event_regs_trial)
+    return event_regs, nlags, basis
+

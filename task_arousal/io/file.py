@@ -1,5 +1,5 @@
 """
-Class for iterating over subject fMRI and physio data files
+Class for iterating over Euskalibur and HCP fMRI and physio data files
 """
 import re
 import warnings
@@ -9,13 +9,16 @@ from typing import List, Tuple, Literal
 
 from bids import BIDSLayout
 
-from task_arousal.constants import DATA_DIRECTORY, IS_DERIVED
+from task_arousal.constants import DATA_DIRECTORY_EUSKALIBUR, IS_DERIVED
 
 
-class FileMapper:
+class FileMapperEuskalibur:
     """
-    Maps file paths for a specific subject's fMRI and physiological data.
+    Maps file paths for a specific subject's fMRI and physiological data in the
+    Euskalibur BIDS dataset.
     """
+    # specify dataset name
+    DATASET = 'euskalibur'
     
     def __init__(self, subject: str):
         """
@@ -44,15 +47,15 @@ class FileMapper:
             # suppress warnings about soon-to-be-deprecated ignore parameter
             warnings.simplefilter("ignore")
             if IS_DERIVED:
-                self.layout = BIDSLayout(DATA_DIRECTORY, is_derivative=True, ignore=[ignore_pattern])
+                self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, is_derivative=True, ignore=[ignore_pattern])
             else:
-                self.layout = BIDSLayout(DATA_DIRECTORY, derivatives=True, ignore=[ignore_pattern])
+                self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, derivatives=True, ignore=[ignore_pattern])
 
         # get available subjects in the dataset
         self.available_subjects = self.layout.get_subjects()
         # check whether any subjects are found
         if not self.available_subjects:
-            raise RuntimeError(f"No subjects found in BIDS directory: {DATA_DIRECTORY}")
+            raise RuntimeError(f"No subjects found in BIDS directory: {DATA_DIRECTORY_EUSKALIBUR}")
 
         # check if subject is valid
         if subject not in self.available_subjects:
@@ -396,26 +399,32 @@ class FileMapper:
             fp_durations = [f.path for f in bids_files_duration]
         return list(zip(fp_onsets, fp_durations))
 
-    def modify_file_name(self, file_path: str, entity_update: dict[str, str]) -> str:
-        """
-        Modify a BIDS file path by updating specific entities.
 
-        Parameters
-        ----------
-        file_path : str
-            The original BIDS file path.
-        entity_update : dict of str to str
-            A dictionary specifying the entities to update and their new values.
+def get_dataset_subjects(dataset: str) -> List[str]:
+    """
+    Get the list of available subjects for a specific dataset.
 
-        Returns
-        -------
-        str
-            The modified BIDS file path.
-        """
-        # Parse the original file path to get its entities
-        entities = self.layout.parse_file_entities(file_path)
-        # Update the entities with the provided values
-        entities.update(entity_update)
-        # Construct the new file path using the updated entities
-        new_file_path = self.layout.build_path(entities)
-        return new_file_path
+    Parameters
+    ----------
+    dataset : str
+        The dataset name. Options are 'euskalibur'.
+
+    Returns
+    -------
+    list of str
+        A list of subject identifiers (EUSKALIBUR)
+    """
+    if dataset == 'euskalibur':
+        # The BIDSLayout initialization can be slow, especially for large datasets
+        with warnings.catch_warnings():
+            # suppress warnings about soon-to-be-deprecated ignore parameter
+            warnings.simplefilter("ignore")
+            if IS_DERIVED:
+                layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, is_derivative=True)
+            else:
+                layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, derivatives=True)
+        subjects = layout.get_subjects()
+    else:
+        raise ValueError("Dataset must be 'euskalibur'")
+
+    return subjects

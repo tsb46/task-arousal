@@ -8,13 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # path to data directory
-DATA_DIRECTORY = os.getenv('DATA_DIRECTORY', 'data')
+DATA_DIRECTORY_EUSKALIBUR = os.getenv('DATA_DIRECTORY_EUSKALIBUR', 'data/euskalibur')
+# flag indicating if the data should be searched in the 'derivatives' directory
 IS_DERIVED = os.getenv('IS_DERIVED', 'false').lower() == 'true'
 
 # Brain mask
-MASK = 'templates/MNI152_T1_2mm_brain_mask_dil.nii.gz'
+MASK_EUSKALIBUR = 'templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz'
 # TR (Repetition Time) in seconds
-TR = 1.5
+TR_EUSKALIBUR = 1.5
 # Slice timing reference, between 0 and 1 (middle slice)
 SLICE_TIMING_REF = 0.5
 
