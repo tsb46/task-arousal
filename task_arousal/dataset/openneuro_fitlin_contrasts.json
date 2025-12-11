@@ -1,0 +1,170 @@
+{
+  "ds000001": {
+    "tasks": {
+      "balloonanalogrisktask": ["allpumps"]
+    }
+  },
+  "ds000002": {
+    "tasks": {
+      "deterministicclassification": ["feedback"],
+      "mixedeventrelatedprobe": ["prob", "determ"],
+      "probabilisticclassification": ["feedback"]
+    }
+  },
+  "ds000005": {},
+  "ds000008": {
+    "tasks": {
+      "stopsignal": ["successstop", "go"]
+    }
+  },
+  "ds000009": {
+    "tasks": {
+      "balloonanalogrisktask": ["allpumps"],
+      "discounting": ["choice"],
+      "emotionalregulation": ["suppressneg", "attendneg", "rating"],
+      "stopsignal": ["successstop", "go"]
+    }
+  },
+  "ds000051": {
+    "tasks": {
+      "abstractconcretejudgment": ["presentspanish", "presentenglish"]
+    }
+  },
+  "ds000052": {
+    "tasks": {
+      "weatherprediction": ["neg", "pos"],
+      "reverseweatherprediction": ["neg", "pos"]
+    }
+  },
+  "ds000102": {
+    "tasks": {
+      "flanker": ["inVbase"]
+    }
+  },
+  "ds000105": {
+    "tasks": {
+      "objectviewing": [
+        "scissors",
+        "face",
+        "cat",
+        "shoe",
+        "house",
+        "scrambledpix",
+        "bottle",
+        "chair"
+      ]
+    }
+  },
+  "ds000108": {
+    "tasks": {
+      "emotionalregulation": ["StimReappNeg", "StimLookNeg", "StimLookNeutral"]
+    }
+  },
+  "ds000109": {
+    "tasks": {
+      "theoryofmindwithmanualresponse": ["storybelief", "storyphoto"]
+    }
+  },
+  "ds000114": {
+    "tasks": {
+      "covertverbgeneration": ["task"],
+      "fingerfootlips": ["finger", "foot", "lips"],
+      "linebisection": [],
+      "overtverbgeneration": ["task"],
+      "overtwordrepetition": ["task"]
+    }
+  },
+  "ds000115": {
+    "tasks": {
+      "letter0backtask": ["zeroback"],
+      "letter1backtask": ["oneback"],
+      "letter2backtask": ["twoback"]
+    }
+  },
+  "ds000117": {
+    "tasks": {
+      "facerecognition": []
+    }
+  },
+  "ds000120": {
+    "tasks": {
+      "antisaccadetaskwithfixedorder": [
+        "allphaseneutralantisaccade",
+        "allphasevgs",
+        "allphaserewardantisaccade"
+      ]
+    }
+  },
+  "ds000144": {
+    "tasks": {
+      "emotionalfaces": ["angry", "fearful"]
+    }
+  },
+  "ds000148": {
+    "tasks": {
+      "figure2backwith1backlures": ["distractcorr", "lurecorr", "targethit"]
+    }
+  },
+  "ds000157": {
+    "tasks": {
+      "passiveimageviewing": ["foodvbaseline", "nonfoodvbaseline"]
+    }
+  },
+  "ds000170": {
+    "tasks": {
+      "TrainedHandTrainedSequence": ["perf1", "perf2"],
+      "TrainedHandUntrainedSequence": ["perf1", "perf2"],
+      "UntrainedHandTrainedSequence": ["perf1", "perf2"],
+      "UntrainedHandUntrainedSequence": ["perf1", "perf2"]
+    }
+  },
+  "ds000171": {
+    "tasks": {
+      "music": ["posmusic", "negmusic", "tones", "response"],
+      "nonmusic": ["posnonmusic", "negnonmusic", "tones", "response"]
+    }
+  },
+  "ds000212": {
+    "tasks": {
+      "dis": [],
+      "fb": ["photo", "belief"],
+      "tom": [],
+      "tomloc": []
+    }
+  },
+  "ds000213": {
+    "tasks": {
+      "socialcomparison": []
+    }
+  },
+  "ds000229": {
+    "tasks": {
+      "flavor": [
+        "rinse",
+        "tasteless",
+        "cs150",
+        "cs112",
+        "cs75",
+        "csthirtyseven",
+        "cszero"
+      ]
+    }
+  },
+  "ds000255": {
+    "tasks": {
+      "viewFigure": ["shape"],
+      "viewRandom": ["random"]
+    }
+  },
+  "ds001229": {
+    "tasks": {
+      "em": ["oglexreal", "pmfacesreal", "pmscenereal"],
+      "wm": ["oglexreal", "pmfacesreal", "pmscenereal"]
+    }
+  },
+  "ds001233": {
+    "tasks": {
+      "cuedSFM": ["index", "middle", "ring", "pinky"]
+    }
+  }
+}
