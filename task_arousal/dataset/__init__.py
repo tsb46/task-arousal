@@ -1,5 +1,5 @@
 """
-Dataset module for loading preprocessed data for HCP and Euskalibur datasets.
+Dataset module for loading data for analysis.
 """
 
 from .dataset_euskalibur import DatasetEuskalibur
