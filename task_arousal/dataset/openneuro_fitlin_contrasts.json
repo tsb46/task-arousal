@@ -2,20 +2,28 @@
   "ds000001": {
     "tasks": {
       "balloonanalogrisktask": ["allpumps"]
-    }
+    },
+    "sessions": []
   },
   "ds000002": {
     "tasks": {
       "deterministicclassification": ["feedback"],
       "mixedeventrelatedprobe": ["prob", "determ"],
       "probabilisticclassification": ["feedback"]
-    }
+    },
+    "sessions": []
   },
-  "ds000005": {},
+  "ds000005": {
+    "tasks": {
+      "mixedgamblestask": []
+    },
+    "sessions": []
+  },
   "ds000008": {
     "tasks": {
       "stopsignal": ["successstop", "go"]
-    }
+    },
+    "sessions": []
   },
   "ds000009": {
     "tasks": {
@@ -23,23 +31,27 @@
       "discounting": ["choice"],
       "emotionalregulation": ["suppressneg", "attendneg", "rating"],
       "stopsignal": ["successstop", "go"]
-    }
+    },
+    "sessions": []
   },
   "ds000051": {
     "tasks": {
       "abstractconcretejudgment": ["presentspanish", "presentenglish"]
-    }
+    },
+    "sessions": []
   },
   "ds000052": {
     "tasks": {
       "weatherprediction": ["neg", "pos"],
-      "reverseweatherprediction": ["neg", "pos"]
-    }
+      "reversalweatherprediction": ["neg", "pos"]
+    },
+    "sessions": []
   },
   "ds000102": {
     "tasks": {
       "flanker": ["inVbase"]
-    }
+    },
+    "sessions": []
   },
   "ds000105": {
     "tasks": {
@@ -53,17 +65,20 @@
         "bottle",
         "chair"
       ]
-    }
+    },
+    "sessions": []
   },
   "ds000108": {
     "tasks": {
-      "emotionalregulation": ["StimReappNeg", "StimLookNeg", "StimLookNeutral"]
-    }
+      "Emotionregulation": ["StimReappNeg", "StimLookNeg", "StimLookNeutral"]
+    },
+    "sessions": []
   },
   "ds000109": {
     "tasks": {
       "theoryofmindwithmanualresponse": ["storybelief", "storyphoto"]
-    }
+    },
+    "sessions": []
   },
   "ds000114": {
     "tasks": {
@@ -72,19 +87,22 @@
       "linebisection": [],
       "overtverbgeneration": ["task"],
       "overtwordrepetition": ["task"]
-    }
+    },
+    "sessions": ["retest", "test"]
   },
   "ds000115": {
     "tasks": {
       "letter0backtask": ["zeroback"],
       "letter1backtask": ["oneback"],
       "letter2backtask": ["twoback"]
-    }
+    },
+    "sessions": []
   },
   "ds000117": {
     "tasks": {
       "facerecognition": []
-    }
+    },
+    "sessions": []
   },
   "ds000120": {
     "tasks": {
@@ -93,22 +111,26 @@
         "allphasevgs",
         "allphaserewardantisaccade"
       ]
-    }
+    },
+    "sessions": []
   },
   "ds000144": {
     "tasks": {
       "emotionalfaces": ["angry", "fearful"]
-    }
+    },
+    "sessions": []
   },
   "ds000148": {
     "tasks": {
       "figure2backwith1backlures": ["distractcorr", "lurecorr", "targethit"]
-    }
+    },
+    "sessions": []
   },
   "ds000157": {
     "tasks": {
       "passiveimageviewing": ["foodvbaseline", "nonfoodvbaseline"]
-    }
+    },
+    "sessions": []
   },
   "ds000170": {
     "tasks": {
@@ -116,13 +138,15 @@
       "TrainedHandUntrainedSequence": ["perf1", "perf2"],
       "UntrainedHandTrainedSequence": ["perf1", "perf2"],
       "UntrainedHandUntrainedSequence": ["perf1", "perf2"]
-    }
+    },
+    "sessions": []
   },
   "ds000171": {
     "tasks": {
       "music": ["posmusic", "negmusic", "tones", "response"],
       "nonmusic": ["posnonmusic", "negnonmusic", "tones", "response"]
-    }
+    },
+    "sessions": []
   },
   "ds000212": {
     "tasks": {
@@ -130,12 +154,14 @@
       "fb": ["photo", "belief"],
       "tom": [],
       "tomloc": []
-    }
+    },
+    "sessions": []
   },
   "ds000213": {
     "tasks": {
       "socialcomparison": []
-    }
+    },
+    "sessions": []
   },
   "ds000229": {
     "tasks": {
@@ -148,23 +174,260 @@
         "csthirtyseven",
         "cszero"
       ]
-    }
+    },
+    "sessions": []
   },
   "ds000255": {
     "tasks": {
-      "viewFigure": ["shape"],
-      "viewRandom": ["random"]
-    }
+      "viewFigure": [],
+      "viewRandom": []
+    },
+    "sessions": []
   },
   "ds001229": {
     "tasks": {
       "em": ["oglexreal", "pmfacesreal", "pmscenereal"],
       "wm": ["oglexreal", "pmfacesreal", "pmscenereal"]
-    }
+    },
+    "sessions": []
   },
   "ds001233": {
     "tasks": {
-      "cuedSFM": ["index", "middle", "ring", "pinky"]
-    }
+      "cuedSFM": []
+    },
+    "sessions": []
+  },
+  "ds001297": {
+    "tasks": {
+      "faceidentityoddball": ["motor", "buffer"]
+    },
+    "sessions": []
+  },
+  "ds001357": {
+    "tasks": {
+      "familiarity": [],
+      "viewing": []
+    },
+    "sessions": []
+  },
+  "ds001597": {
+    "tasks": {
+      "cuedMFM": []
+    },
+    "sessions": []
+  },
+  "ds001715": {
+    "tasks": {
+      "dts": [
+        "motionaligneffect",
+        "coloraligneffect",
+        "absmotioneffect",
+        "abscolorneffect"
+      ]
+    },
+    "sessions": []
+  },
+  "ds001734": {
+    "tasks": {
+      "MGT": ["alltrials"]
+    },
+    "sessions": []
+  },
+  "ds001848": {
+    "tasks": {
+      "ParallelAdaptation": ["devnonsym", "devsym", "devphys"]
+    },
+    "sessions": []
+  },
+  "ds002006": {
+    "tasks": {
+      "ColorDots": ["colordots"],
+      "FoodChoice": ["foodchoice"],
+      "Memory": []
+    },
+    "sessions": []
+  },
+  "ds002033": {
+    "tasks": {
+      "ChangeDetection": ["digits", "letters"]
+    },
+    "sessions": []
+  },
+  "ds002294": {
+    "tasks": {
+      "roletrait": [
+        "selftraitvbase",
+        "friendtraitvbase",
+        "selfrolevbase",
+        "friendrolevbase",
+        "selfgroupvbase",
+        "friendgroupvbase"
+      ]
+    },
+    "sessions": []
+  },
+  "ds002338": {
+    "tasks": {
+      "1dNF": ["taskvrest"],
+      "2dNF": ["taskvrest"],
+      "MIpost": [],
+      "MIpre": []
+    },
+    "sessions": []
+  },
+  "ds002422": {
+    "tasks": {
+      "arithm": ["arithmetic", "control"]
+    },
+    "sessions": []
+  },
+  "ds002872": {
+    "tasks": {
+      "illusion": ["vibration", "texture"]
+    },
+    "sessions": []
+  },
+  "ds003345": {
+    "tasks": {
+      "PenaltyKik": []
+    },
+    "sessions": []
+  },
+  "ds003397": {
+    "tasks": {
+      "checkerboard": []
+    },
+    "sessions": []
+  },
+  "ds003425": {
+    "tasks": {
+      "learning": ["VCSPshck"],
+      "prelearning": [],
+      "regulate": [],
+      "training": ["shkon"]
+    },
+    "sessions": ["01"]
+  },
+  "ds003441": {
+    "tasks": {
+      "1Norm": [],
+      "2Swallow": [],
+      "3HandA": [],
+      "4HandB": [],
+      "5Eyes": [],
+      "6DeepBreathing": []
+    },
+    "sessions": []
+  },
+  "ds003481": {
+    "tasks": {
+      "cmp": [],
+      "ec": [],
+      "pc": [],
+      "sae": [],
+      "sar": [],
+      "verbs": []
+    },
+    "sessions": []
+  },
+  "ds003545": {
+    "tasks": {
+      "compL1": [],
+      "compLn": [],
+      "prodL1": [],
+      "prodLn": []
+    },
+    "sessions": []
+  },
+  "ds003789": {
+    "tasks": {
+      "encoding": ["WordList1", "WordList2", "WordList3"],
+      "retrieval": ["targetold", "lureold", "foilnew", "lurenew"]
+    },
+    "sessions": []
+  },
+  "ds003831": {
+    "tasks": {
+      "identify1": ["exstimarousal", "exstimval", "instimarousal", "instimval"],
+      "identify2": [],
+      "modulate1": ["regvrest", "allfbvrest", "regulationerror"],
+      "modulate2": []
+    },
+    "sessions": []
+  },
+  "ds003858": {
+    "tasks": {
+      "MIDmb4": ["cueLWvBase", "fixLWvBase", "probe", "fbLWHitvBase"]
+    },
+    "sessions": []
+  },
+  "ds004056": {
+    "tasks": {
+      "GDMotor": []
+    },
+    "sessions": []
+  },
+  "ds004141": {
+    "tasks": {
+      "auditoryfeedback": [],
+      "faceexplocalizer": [],
+      "nofeedback": [],
+      "visualfeedback": []
+    },
+    "sessions": []
+  },
+  "ds004144": {
+    "tasks": {
+      "epr": ["neutralvbase"]
+    },
+    "sessions": []
+  },
+  "ds004556": {
+    "tasks": {
+      "feedback": [
+        "allbarsvfixation",
+        "ratingvfixation",
+        "instructionvfixation"
+      ]
+    },
+    "sessions": []
+  },
+  "ds004604": {
+    "tasks": {
+      "gas": []
+    },
+    "sessions": []
+  },
+  "ds004656": {
+    "tasks": {
+      "FoodStimHiLo": []
+    },
+    "sessions": []
+  },
+  "ds004920": {
+    "tasks": {
+      "doors": ["decision"],
+      "mid": ["cueLWvBase", "fixLWvBase", "fbLWHitvBase"],
+      "socialdoors": ["decision"]
+    },
+    "sessions": []
+  },
+  "ds005012": {
+    "tasks": {
+      "mid": ["cueLGvBase", "fixLGvBase", "fbLGHitvBase"]
+    },
+    "sessions": ["1", "2"]
+  },
+  "ds005267": {
+    "tasks": {
+      "eye": ["allconds"]
+    },
+    "sessions": ["1"]
+  },
+  "ds005418": {
+    "tasks": {
+      "gas": []
+    },
+    "sessions": []
   }
 }
