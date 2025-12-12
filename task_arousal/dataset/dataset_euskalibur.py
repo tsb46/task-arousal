@@ -1,5 +1,5 @@
 """
-Class for managing and loading preprocessed dataset files for 
+Class for loading preprocessed dataset files for 
 a given subject in the Euskalibur dataset.
 """
 from typing import List

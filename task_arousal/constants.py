@@ -15,6 +15,7 @@ IS_DERIVED = os.getenv('IS_DERIVED', 'false').lower() == 'true'
 
 # Brain mask
 MASK_EUSKALIBUR = 'templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz'
+MASK_FITLINS = 'templates/MNI152NLin2009cAsym_res-02_desc-fitlins_brain_mask_90coverage.nii.gz'
 # TR (Repetition Time) in seconds
 TR_EUSKALIBUR = 1.5
 # Slice timing reference, between 0 and 1 (middle slice)
