@@ -9,7 +9,11 @@ from typing import List, Tuple, Literal
 
 from bids import BIDSLayout
 
-from task_arousal.constants import DATA_DIRECTORY_EUSKALIBUR, IS_DERIVED
+from task_arousal.constants import (
+    DATA_DIRECTORY_EUSKALIBUR, 
+    DATA_DIRECTORY_FITLINS, 
+    IS_DERIVED
+)
 
 
 class FileMapperEuskalibur:
@@ -398,6 +402,123 @@ class FileMapperEuskalibur:
             )
             fp_durations = [f.path for f in bids_files_duration]
         return list(zip(fp_onsets, fp_durations))
+
+
+class FileMapperOpenNeuroFitlins:
+    """
+    Maps contrast map file paths downloaded from OpenNeuro FitLins outputs.
+
+    This mapper indexes contrast NIfTI files stored under
+    `data/openneuro_fitlins/contrasts`
+
+    File naming conventions expected:
+    - With session:  <dataset>-ses-<session>-<task>-<contrast>.nii.gz
+    - Without session: <dataset>-<task>-<contrast>.nii.gz
+
+    The class parses these filenames to expose simple queries.
+    """
+
+    DATASET = 'openneuro_fitlins'
+
+    def __init__(self):
+        """
+        Initialize the mapper by scanning the contrasts directory.
+
+        Parameters
+        ----------
+        base_dir : str, optional
+            Base directory containing the `contrasts` folder. If None,
+            defaults to the repository-relative path `data/openneuro_fitlins`.
+        """
+        root = Path(DATA_DIRECTORY_FITLINS)
+        self.contrasts_dir = root / 'contrasts'
+        if not self.contrasts_dir.exists():
+            raise RuntimeError(f"Contrasts directory not found: {self.contrasts_dir}")
+
+        # Regex to parse filenames (optional session segment)
+        # Examples:
+        #   ds000114-ses-test-covertverbgeneration-task.nii.gz (illustrative)
+        #   ds000114-ses-test-covertverbgeneration-task.nii.gz
+        #   ds000105-objectviewing-face.nii.gz
+        self._re = re.compile(r"^(?P<dataset>[^-]+)(?:-ses-(?P<session>[^-]+))?-(?P<task>[^-]+)-(?P<contrast>[^.]+)\.nii\.gz$")
+
+        # Build index: datasets -> tasks -> sessions(optional) -> contrasts -> files
+        self.index: dict[str, dict] = {}
+        self.files: list[str] = []
+
+        for fp in self.contrasts_dir.glob('*.nii.gz'):
+            name = fp.name
+            m = self._re.match(name)
+            if not m:
+                # Ignore files that don't match the expected pattern
+                continue
+            dataset = m.group('dataset')
+            session = m.group('session') or ''
+            task = m.group('task')
+            contrast = m.group('contrast')
+
+            self.files.append(str(fp))
+            ds = self.index.setdefault(dataset, {})
+            tasks = ds.setdefault('tasks', {})
+            sess_set = ds.setdefault('sessions', set())
+            if session:
+                sess_set.add(session)
+            tentry = tasks.setdefault(task, {})
+            cdict = tentry.setdefault(session, {})
+            cfiles = cdict.setdefault(contrast, [])
+            cfiles.append(str(fp))
+
+        # Normalize sessions to sorted list for stable outputs
+        for ds in self.index.values():
+            ds['sessions'] = sorted(list(ds['sessions']))
+
+    def get_datasets(self) -> List[str]:
+        return sorted(list(self.index.keys()))
+
+    def get_sessions(self, dataset: str) -> List[str]:
+        ds = self.index.get(dataset)
+        if not ds:
+            return []
+        return ds.get('sessions', [])
+
+    def get_tasks(self, dataset: str) -> List[str]:
+        ds = self.index.get(dataset)
+        if not ds:
+            return []
+        return sorted(list(ds['tasks'].keys()))
+
+    def get_contrasts(self, dataset: str, task: str, session: str | None = None) -> List[str]:
+        ds = self.index.get(dataset)
+        if not ds:
+            return []
+        task_map = ds['tasks'].get(task, {})
+        sess_key = session or ''
+        return sorted(list(task_map.get(sess_key, {}).keys()))
+
+    def get_files(self, dataset: str | None = None, task: str | None = None,
+                  contrast: str | None = None, session: str | None = None) -> List[str]:
+        """
+        Retrieve files matching provided filters. Any filter can be None to
+        match-all at that level.
+        """
+        if dataset is None and task is None and contrast is None and session is None:
+            return sorted(self.files)
+
+        out: List[str] = []
+        for ds_name, ds in self.index.items():
+            if dataset is not None and ds_name != dataset:
+                continue
+            for task_name, sess_map in ds['tasks'].items():
+                if task is not None and task_name != task:
+                    continue
+                for sess_key, con_map in sess_map.items():
+                    if session is not None and sess_key != (session or ''):
+                        continue
+                    for con_name, files in con_map.items():
+                        if contrast is not None and con_name != contrast:
+                            continue
+                        out.extend(files)
+        return sorted(out)
 
 
 def get_dataset_subjects(dataset: str) -> List[str]:

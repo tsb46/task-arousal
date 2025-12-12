@@ -9,6 +9,7 @@ load_dotenv()
 
 # path to data directory
 DATA_DIRECTORY_EUSKALIBUR = os.getenv('DATA_DIRECTORY_EUSKALIBUR', 'data/euskalibur')
+DATA_DIRECTORY_FITLINS = os.getenv('DATA_DIRECTORY_FITLINS', 'data/openneuro_fitlins')
 # flag indicating if the data should be searched in the 'derivatives' directory
 IS_DERIVED = os.getenv('IS_DERIVED', 'false').lower() == 'true'
 
