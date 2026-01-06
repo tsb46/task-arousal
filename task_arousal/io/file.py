@@ -1,5 +1,5 @@
 """
-Class for iterating over Euskalibur and HCP fMRI and physio data files
+Class for iterating over fMRI and physio data files in BIDS format.
 """
 import re
 import warnings
@@ -9,31 +9,39 @@ from typing import List, Tuple, Literal
 
 from bids import BIDSLayout
 
-from task_arousal.constants import DATA_DIRECTORY_EUSKALIBUR, IS_DERIVED
+from task_arousal.constants import (
+    DATA_DIRECTORY_EUSKALIBUR, 
+    DATA_DIRECTORY_IBC,
+    IS_DERIVED
+)
 
 
-class FileMapperEuskalibur:
+class FileMapper:
     """
-    Maps file paths for a specific subject's fMRI and physiological data in the
-    Euskalibur BIDS dataset.
+    Maps file paths for a specific subject's fMRI and physiological data in a BIDS dataset.
     """
-    # specify dataset name
-    DATASET = 'euskalibur'
     
-    def __init__(self, subject: str):
+    def __init__(
+        self,
+        dataset: Literal['euskalibur', 'ibc'],
+        subject: str
+    ):
         """
         Initialize the FileMapper for a specific subject.
 
         Parameters
         ----------
+        dataset : {'euskalibur', 'ibc'}
+            The dataset name.
         subject : str
             The subject identifier.
         """
+        self.dataset = dataset
         self.subject = subject
         # initialize BIDS layout
         print("Initializing BIDS layout for subject:", subject)
         """
-        Note: the filemapper class assumes that fmri, physio and event files 
+        Note, for EUSKALIBUR dataset: the filemapper class assumes that fmri, physio and event files 
         are in a single BIDS directory structure. Physio files are in the 'raw'
         BIDS directory and are not copied into the FMRIPrep derivatives folder. We
         must manually (or through a script) copy the physio files in the raw BIDS 
@@ -46,10 +54,15 @@ class FileMapperEuskalibur:
         with warnings.catch_warnings():
             # suppress warnings about soon-to-be-deprecated ignore parameter
             warnings.simplefilter("ignore")
-            if IS_DERIVED:
-                self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, is_derivative=True, ignore=[ignore_pattern])
-            else:
-                self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, derivatives=True, ignore=[ignore_pattern])
+            # Handle Euskalibur preprocessed files, which are placed in a 'derivatives' folder
+            # this may need to be adjusted based on how the data is organized
+            if self.dataset == 'euskalibur':
+                if IS_DERIVED:
+                    self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, is_derivative=True, ignore=[ignore_pattern])
+                else:
+                    self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, derivatives=True, ignore=[ignore_pattern])
+            elif self.dataset == 'ibc':
+                self.layout = BIDSLayout(DATA_DIRECTORY_IBC, ignore=[ignore_pattern], is_derivative=True)
 
         # get available subjects in the dataset
         self.available_subjects = self.layout.get_subjects()
