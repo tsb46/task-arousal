@@ -32,7 +32,8 @@ DUMMY_VOLUMES = 10
 # High-pass filter cutoff frequency for fmri
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
-FWHM = 4  # in mm
+FWHM_EUSKALIBUR = 4  # in mm
+FWHM_IBC = 5  # in mm
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
 # physiological resample frequency (in Hz)

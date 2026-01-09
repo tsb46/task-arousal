@@ -50,7 +50,8 @@ from task_arousal.preprocess.physio_features import (
 from task_arousal.constants import (
     DUMMY_VOLUMES,
     HIGHPASS,
-    FWHM,
+    FWHM_EUSKALIBUR,
+    FWHM_IBC,
     PHYSIO_COLUMNS_EUSKALIBUR,
     PHYSIO_RESAMPLE_F
 )
@@ -283,8 +284,10 @@ def func_pipeline(dataset: str, func_fp: str, tr: float, resample: bool = False)
     # select mask based on dataset
     if dataset == 'euskalibur':
         mask = MASK_EUSKALIBUR
+        fwhm = FWHM_EUSKALIBUR
     elif dataset == 'ibc':
         mask = MASK_IBC
+        fwhm = FWHM_IBC
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 
@@ -323,7 +326,7 @@ def func_pipeline(dataset: str, func_fp: str, tr: float, resample: bool = False)
     assert isinstance(func_img_proc, nib.nifti1.Nifti1Image), "clean_img did not return a Nifti1Image."
 
     # Apply spatial smoothing
-    func_img_proc = _func_smooth(func_img_proc, fwhm=FWHM)
+    func_img_proc = _func_smooth(func_img_proc, fwhm=fwhm)
 
     # Mask out smoothed data to ensure non-brain voxels are zero
     func_data_masked = apply_mask(func_img_proc, mask_img)
