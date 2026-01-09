@@ -50,7 +50,7 @@ def load_physio(fp: str, normalize: bool = False) -> pd.DataFrame:
 
 def load_fmri(
     fp: str,
-    mask_img: Any,
+    mask_img: nib.nifti1.Nifti1Image,
     normalize: bool = False,
     convert_to_2d: bool = True,
     verbose: bool = False,
@@ -62,7 +62,7 @@ def load_fmri(
     ----------
     fp : str
         NIfTI file path.
-    mask_img : nib.Nifti1Image
+    mask_img : nib.nifti1.Nifti1Image
         Brain mask in the same space as fp.
     normalize : bool
         If convert_to_2d, z-score each voxel across time (axis=0 after masking).

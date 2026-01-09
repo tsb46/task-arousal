@@ -1,0 +1,663 @@
+{
+  "ArchiStandard": {
+    "condition": [
+      "audio_computation",
+      "audio_sentence",
+      "horizontal_checkerboard",
+      "vertical_checkerboard",
+      "video_computation",
+      "video_left_button_press",
+      "video_right_button_press",
+      "video_sentence"
+    ]
+  },
+  "ArchiSpatial": {
+    "condition": [
+      "object_grasp",
+      "object_orientation",
+      "rotation_hand",
+      "rotation_side",
+      "saccades"
+    ]
+  },
+  "ArchiSocial": {
+    "condition": [
+      "false_belief_audio",
+      "false_belief_video",
+      "mechanistic_audio",
+      "mechanistic_video",
+      "non_speech_sound",
+      "speech_sound",
+      "triangle_mental",
+      "triangle_random"
+    ]
+  },
+  "ArchiEmotional": {
+    "condition": [
+      "expression_control",
+      "expression_gender",
+      "expression_intention",
+      "face_control",
+      "face_gender",
+      "face_trusty"
+    ]
+  },
+  "HcpEmotion": {
+    "condition": ["face", "shape"]
+  },
+  "HcpGambling": {
+    "condition": ["punishment", "reward"]
+  },
+  "HcpMotor": {
+    "condition": [
+      "cue",
+      "left_foot",
+      "left_hand",
+      "right_foot",
+      "right_hand",
+      "tongue"
+    ]
+  },
+  "HcpLanguage": {
+    "condition": ["math", "story"]
+  },
+  "HcpRelational": {
+    "condition": ["match", "relational"]
+  },
+  "HcpSocial": {
+    "condition": ["mental", "random"]
+  },
+  "HcpWm": {
+    "condition": [
+      "0back_body",
+      "0back_face",
+      "0back_place",
+      "0back_tools",
+      "2back_body",
+      "2back_face",
+      "2back_place",
+      "2back_tools"
+    ]
+  },
+  "RSVPLanguage": {
+    "condition": [
+      "complex",
+      "consonant_string",
+      "jabberwocky",
+      "probe",
+      "pseudoword_list",
+      "simple",
+      "word_list"
+    ]
+  },
+  "MTTWE": {
+    "condition": [
+      "we_after_event",
+      "we_all_event_response",
+      "we_all_space_cue",
+      "we_all_time_cue",
+      "we_average_reference",
+      "we_before_event",
+      "we_eastside_event",
+      "we_westside_event"
+    ]
+  },
+  "MTTNS": {
+    "condition": [
+      "sn_after_event",
+      "sn_all_event_response",
+      "sn_all_space_cue",
+      "sn_all_time_cue",
+      "sn_average_reference",
+      "sn_before_event",
+      "sn_northside_event",
+      "sn_southside_event"
+    ]
+  },
+  "PreferenceFood": {
+    "condition": ["food_constant", "food_linear", "food_quadratic"]
+  },
+  "PreferencePaintings": {
+    "condition": ["painting_constant", "painting_linear", "painting_quadratic"]
+  },
+  "PreferenceFaces": {
+    "condition": ["face_constant", "face_linear", "face_quadratic"]
+  },
+  "PreferenceHouses": {
+    "condition": ["house_constant", "house_linear", "house_quadratic"]
+  },
+  "TheoryOfMind": {
+    "condition": ["belief", "photo"]
+  },
+  "EmotionalPain": {
+    "condition": ["emotional_pain", "physical_pain"]
+  },
+  "PainMovie": {
+    "condition": ["movie_mental", "movie_pain"]
+  },
+  "VSTM": {
+    "condition": ["vstm_constant", "vstm_linear", "vstm_quadratic"]
+  },
+  "Enumeration": {
+    "condition": [
+      "enumeration_constant",
+      "enumeration_linear",
+      "enumeration_quadratic"
+    ]
+  },
+  "Self": {
+    "condition": [
+      "encode_other",
+      "encode_self",
+      "instructions",
+      "recognition_other_hit",
+      "recognition_self_hit"
+    ]
+  },
+  "Bang": {
+    "condition": ["no_talk", "talk"]
+  },
+  "WedgeClock": {
+    "condition": [
+      "left_meridian",
+      "lower_left",
+      "lower_meridian",
+      "lower_right",
+      "right_meridian",
+      "upper_left",
+      "upper_meridian",
+      "upper_right"
+    ]
+  },
+  "WedgeAnti": {
+    "condition": [
+      "left_meridian",
+      "lower_left",
+      "lower_meridian",
+      "lower_right",
+      "right_meridian",
+      "upper_left",
+      "upper_meridian",
+      "upper_right"
+    ]
+  },
+  "ContRing": {
+    "condition": ["foveal", "middle", "peripheral"]
+  },
+  "ExpRing": {
+    "condition": ["foveal", "middle", "peripheral"]
+  },
+  "Lec2": {
+    "condition": ["attend", "unattend"]
+  },
+  "Audi": {
+    "condition": [
+      "alphabet",
+      "animals",
+      "cough",
+      "environment",
+      "human",
+      "laugh",
+      "music",
+      "reverse",
+      "silence",
+      "speech",
+      "suomi",
+      "tear",
+      "yawn"
+    ]
+  },
+  "Visu": {
+    "condition": [
+      "animal",
+      "characters",
+      "face",
+      "fruit",
+      "house",
+      "pseudoword",
+      "scene",
+      "scrambled",
+      "tool"
+    ]
+  },
+  "Lec1": {
+    "condition": ["pseudoword", "random_string", "word"]
+  },
+  "MVEB": {
+    "condition": [
+      "2_letters_different",
+      "2_letters_same",
+      "4_letters_different",
+      "4_letters_same",
+      "6_letters_different",
+      "6_letters_same",
+      "letter_occurrence_response"
+    ]
+  },
+  "MVIS": {
+    "condition": [
+      "2_dots",
+      "2_dots_control",
+      "4_dots",
+      "4_dots_control",
+      "6_dots",
+      "6_dots_control",
+      "dot_displacement_response"
+    ]
+  },
+  "Moto": {
+    "condition": [
+      "finger_left",
+      "finger_right",
+      "fixation",
+      "foot_left",
+      "foot_right",
+      "hand_left",
+      "hand_right",
+      "saccade_left",
+      "saccade_right",
+      "tongue_left",
+      "tongue_right"
+    ]
+  },
+  "MCSE": {
+    "condition": [
+      "high_salience_left",
+      "high_salience_right",
+      "low_salience_left",
+      "low_salience_right"
+    ]
+  },
+  "Audio": {
+    "condition": [
+      "animal",
+      "catch",
+      "music",
+      "nature",
+      "silence",
+      "speech",
+      "tool",
+      "voice"
+    ]
+  },
+  "Attention": {
+    "condition": [
+      "double_congruent",
+      "double_cue",
+      "double_incongruent",
+      "spatial_congruent",
+      "spatial_cue",
+      "spatial_incongruent"
+    ]
+  },
+  "StopSignal": {
+    "condition": ["go", "stop"]
+  },
+  "TwoByTwo": {
+    "condition": [
+      "cue_taskstay_cuestay",
+      "cue_taskstay_cueswitch",
+      "cue_taskswitch_cuestay",
+      "cue_taskswitch_cueswitch",
+      "stim_taskstay_cuestay",
+      "stim_taskstay_cueswitch",
+      "stim_taskswitch_cuestay",
+      "stim_taskswitch_cueswitch"
+    ]
+  },
+  "Discount": {
+    "condition": ["amount", "delay"]
+  },
+  "SelectiveStopSignal": {
+    "condition": ["go_critical", "go_noncritical", "ignore", "stop"]
+  },
+  "Stroop": {
+    "condition": ["congruent", "incongruent"]
+  },
+  "ColumbiaCards": {
+    "condition": ["gain", "loss", "num_loss_cards"]
+  },
+  "DotPatterns": {
+    "condition": [
+      "correct_cue_correct_probe",
+      "correct_cue_incorrect_probe",
+      "cue",
+      "incorrect_cue_correct_probe",
+      "incorrect_cue_incorrect_probe"
+    ]
+  },
+  "WardAndAllport": {
+    "condition": [
+      "planning_ambiguous_direct",
+      "planning_ambiguous_intermediate",
+      "planning_unambiguous_direct",
+      "planning_unambiguous_intermediate"
+    ]
+  },
+  "BiologicalMotion1": {
+    "condition": [
+      "global_inverted",
+      "global_upright",
+      "natural_inverted",
+      "natural_upright"
+    ]
+  },
+  "BiologicalMotion2": {
+    "condition": [
+      "modified_inverted",
+      "modified_upright",
+      "natural_inverted",
+      "natural_upright"
+    ]
+  },
+  "MathLanguage": {
+    "condition": [
+      "arithmetic_fact_auditory",
+      "arithmetic_fact_visual",
+      "arithmetic_principle_auditory",
+      "arithmetic_principle_visual",
+      "colorlessg_auditory",
+      "colorlessg_visual",
+      "context_auditory",
+      "context_visual",
+      "general_auditory",
+      "general_visual",
+      "geometry_fact_auditory",
+      "geometry_fact_visual",
+      "theory_of_mind_auditory",
+      "theory_of_mind_visual",
+      "wordlist_auditory",
+      "wordlist_visual"
+    ]
+  },
+  "SpatialNavigation": {
+    "condition": [
+      "control",
+      "encoding_phase",
+      "experimental",
+      "intersection",
+      "navigation",
+      "pointing_control",
+      "pointing_experimental"
+    ]
+  },
+  "EmoMem": {
+    "condition": ["negative_image", "neutral_image", "object", "positive_image"]
+  },
+  "EmoReco": {
+    "condition": [
+      "angry_female",
+      "angry_male",
+      "neutral_female",
+      "neutral_male"
+    ]
+  },
+  "StopNogo": {
+    "condition": ["go", "nogo", "successful_stop", "unsuccessful_stop"]
+  },
+  "Catell": {
+    "condition": ["easy", "hard"]
+  },
+  "FingerTapping": {
+    "condition": ["chosen", "no_tap", "specified"]
+  },
+  "VSTMC": {
+    "condition": [
+      "resp_load1",
+      "resp_load2",
+      "resp_load3",
+      "stim_load1",
+      "stim_load2",
+      "stim_load3"
+    ]
+  },
+  "RewProc": {
+    "condition": [
+      "green",
+      "left",
+      "minus_10",
+      "minus_20",
+      "plus_10",
+      "plus_20",
+      "purple",
+      "right",
+      "stay",
+      "switch"
+    ]
+  },
+  "NARPS": {
+    "condition": [
+      "gain",
+      "loss",
+      "stim",
+      "strongly_accept",
+      "strongly_reject",
+      "weakly_accept",
+      "weakly_reject"
+    ]
+  },
+  "FaceBody": {
+    "condition": [
+      "bodies_body",
+      "bodies_limb",
+      "characters_number",
+      "characters_word",
+      "faces_adult",
+      "faces_child",
+      "objects_car",
+      "objects_instrument",
+      "places_corridor",
+      "places_house"
+    ]
+  },
+  "Scene": {
+    "condition": [
+      "dot_easy_left",
+      "dot_easy_right",
+      "dot_hard_left",
+      "dot_hard_right",
+      "scene_impossible_correct",
+      "scene_impossible_incorrect",
+      "scene_possible_correct",
+      "scene_possible_incorrect"
+    ]
+  },
+  "BreathHolding": {
+    "condition": ["breathe", "get_ready", "hold_breath"]
+  },
+  "Checkerboard": {
+    "condition": ["checkerboard", "fixation"]
+  },
+  "FingerTap": {
+    "condition": ["fingertap", "rest"]
+  },
+  "ItemRecognition": {
+    "condition": [
+      "arrow_left",
+      "arrow_right",
+      "encode1",
+      "encode3",
+      "encode5",
+      "load1_instr",
+      "load3_instr",
+      "load5_instr",
+      "probe1_mem",
+      "probe1_new",
+      "probe3_mem",
+      "probe3_new",
+      "probe5_mem",
+      "probe5_new"
+    ]
+  },
+  "VisualSearch": {
+    "condition": [
+      "delay_vis",
+      "delay_wm",
+      "memory_array_four",
+      "memory_array_two",
+      "probe_item_absent",
+      "probe_item_four",
+      "probe_item_present",
+      "probe_item_two",
+      "response_hit",
+      "response_miss",
+      "sample_item",
+      "search_array_absent",
+      "search_array_four",
+      "search_array_present",
+      "search_array_two"
+    ]
+  },
+  "Color": {
+    "condition": ["achromatic", "chromatic", "response"]
+  },
+  "Motion": {
+    "condition": [
+      "anti",
+      "clock",
+      "coherent",
+      "incoherent",
+      "left",
+      "right",
+      "stationary"
+    ]
+  },
+  "OptimismBias": {
+    "condition": [
+      "future_negative",
+      "future_neutral",
+      "future_positive",
+      "inconclusive",
+      "past_negative",
+      "past_neutral",
+      "past_positive"
+    ]
+  },
+  "HarririAomic": {
+    "condition": ["emotion", "index_response", "middle_response", "shape"]
+  },
+  "FacesAomic": {
+    "condition": [
+      "anger",
+      "contempt",
+      "european",
+      "female",
+      "joy",
+      "male",
+      "mediterranean",
+      "neutral",
+      "pride"
+    ]
+  },
+  "StroopAomic": {
+    "condition": [
+      "congruent",
+      "face_female",
+      "face_male",
+      "incongruent",
+      "word_female",
+      "word_male"
+    ]
+  },
+  "WMAomic": {
+    "condition": ["active_change", "active_no_change", "passive"]
+  },
+  "LocalizerAbstraction": {
+    "condition": [
+      "localizer_checkerboards",
+      "localizer_faces",
+      "localizer_humanbody",
+      "localizer_nonsensewords",
+      "localizer_numbers",
+      "localizer_objects",
+      "localizer_places",
+      "localizer_words",
+      "response"
+    ]
+  },
+  "Abstraction": {
+    "condition": [
+      "animals_edge",
+      "animals_geometry",
+      "animals_photo",
+      "faces_edge",
+      "faces_geometry",
+      "faces_photo",
+      "flora_edge",
+      "flora_geometry",
+      "flora_photo",
+      "humanbody_edge",
+      "humanbody_geometry",
+      "humanbody_photo",
+      "objects_edge",
+      "objects_geometry",
+      "objects_photo",
+      "places_edge",
+      "places_geometry",
+      "places_photo",
+      "response"
+    ]
+  },
+  "MDTB": {
+    "condition": [
+      "2back_easy",
+      "2back_hard",
+      "action_action",
+      "action_control",
+      "finger_complex",
+      "finger_simple",
+      "flexion_extension",
+      "movie",
+      "search_easy",
+      "search_hard",
+      "semantic_easy",
+      "semantic_hard",
+      "tom_belief",
+      "tom_photo"
+    ]
+  },
+  "Emotion": {
+    "condition": ["negative_image", "neutral_image", "valence_scale"]
+  },
+  "MultiModal": {
+    "condition": [
+      "audio_animal",
+      "audio_monkey",
+      "audio_nature",
+      "audio_silence",
+      "audio_speech",
+      "audio_tools",
+      "audio_voice",
+      "image_animals",
+      "image_birds",
+      "image_fruits",
+      "image_human_body",
+      "image_human_face",
+      "image_human_object",
+      "image_monkey_body",
+      "image_monkey_face",
+      "image_monkey_object",
+      "image_sculpture",
+      "tactile_bottom",
+      "tactile_middle",
+      "tactile_novalve",
+      "tactile_top"
+    ]
+  },
+  "Mario": {
+    "condition": [
+      "action_jump",
+      "action_leftrun",
+      "action_leftwalk",
+      "action_rightrun",
+      "action_rightwalk",
+      "loss_dying",
+      "onscreen_enemy",
+      "reward_coin",
+      "reward_enemykill_impact",
+      "reward_enemykill_kick",
+      "reward_enemykill_stomp",
+      "reward_powerup_taken"
+    ]
+  }
+}

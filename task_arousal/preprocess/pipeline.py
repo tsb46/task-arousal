@@ -47,16 +47,13 @@ from task_arousal.preprocess.physio_features import (
 )
 
 ## Preprocessing parameters
-# Number of dummy volumes to drop 
-DUMMY_VOLUMES = 10
-# High-pass filter cutoff frequency for fmri
-HIGHPASS = 0.01
-# Full width at half maximum for Gaussian smoothing
-FWHM = 4  # in mm
-# physio fields to extract from raw data
-PHYSIO_COLUMNS_EUSKALIBUR = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
-# physiological resample frequency (in Hz)
-PHYSIO_RESAMPLE_F = 50
+from task_arousal.constants import (
+    DUMMY_VOLUMES,
+    HIGHPASS,
+    FWHM,
+    PHYSIO_COLUMNS_EUSKALIBUR,
+    PHYSIO_RESAMPLE_F
+)
 
 
 class PreprocessingPipeline:
@@ -381,7 +378,7 @@ def physio_pipeline(
     fmri_img = nib.load(fmri_fp) # type: ignore
     # get number of time points in fMRI data after dummy volume removal
     if dataset == 'euskalibur':
-        dummy_n = DUMMY_VOLUMES_EUSKALIBUR
+        dummy_n = DUMMY_VOLUMES
         physio_columns = PHYSIO_COLUMNS_EUSKALIBUR
         tr = TR_EUSKALIBUR
     else:
@@ -513,7 +510,7 @@ def load_physio(dataset: str, physio_fp: str, physio_json: str | None) -> Tuple[
         physio_df, sampling_freq = _load_physio_euskalibur(physio_fp, physio_json)
         # set constants
         tr = TR_EUSKALIBUR
-        dummy_n = DUMMY_VOLUMES_EUSKALIBUR
+        dummy_n = DUMMY_VOLUMES
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 

@@ -18,8 +18,22 @@ MASK_EUSKALIBUR = 'templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz'
 MASK_IBC = 'templates/MNI152_T1_3mm_brain_mask_dil_ibc.nii.gz'
 # TR (Repetition Time) in seconds
 TR_EUSKALIBUR = 1.5
-# Slice timing reference, between 0 and 1 (middle slice)
-SLICE_TIMING_REF = 0.5
+
 
 # expected columns in event dataframe
 EVENT_COLUMNS = ['onset', 'duration', 'trial_type']
+
+
+## Preprocessing parameters
+# Slice timing reference, between 0 and 1 (middle slice)
+SLICE_TIMING_REF = 0.5
+# Number of dummy volumes to drop 
+DUMMY_VOLUMES = 10
+# High-pass filter cutoff frequency for fmri
+HIGHPASS = 0.01
+# Full width at half maximum for Gaussian smoothing
+FWHM = 4  # in mm
+# physio fields to extract from raw data
+PHYSIO_COLUMNS_EUSKALIBUR = ['respiratory_effort', 'cardiac', 'respiratory_CO2', 'respiratory_O2']
+# physiological resample frequency (in Hz)
+PHYSIO_RESAMPLE_F = 50

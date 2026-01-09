@@ -300,12 +300,70 @@ class FileMapper:
             The output directory path.
         """
         return str(Path(fp).parent)
+    
+    def get_sessions_task(self, task: str) -> List[str]:
+        """
+        Get the sessions available for a specific task.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+
+        Returns
+        -------
+        list of str
+            A list of session identifiers.
+        """
+        sessions = self.layout.get_sessions(subject=self.subject, task=task)
+        return sessions
+    
+    def get_session_event_files(
+        self, 
+        session: str, 
+        task: str, 
+        run: str | None = None,
+        ped: str | None = None
+    ) -> list[tuple[str, str]] | list[str]:
+        """
+        Get the event files for a specific session and task.
+
+        Parameters
+        ----------
+        session : str
+            The session identifier.
+        task : str
+            The task identifier.
+        run : str, optional
+            The run identifier. If provided, only files for this run will be returned.
+        ped : str, optional
+            The phase encoding direction of the fMRI data. If provided, only files
+            with this direction will be returned. Options are 'ap' (anterior-posterior)
+            and 'pa' (posterior-anterior).
+
+        Returns
+        -------
+        list of tuple of str | list of str
+            A list of onset and duration file path tuples (onset, duration) - for Euskalibur,
+            or a list of event file paths - for IBC.
+        """
+        if self.dataset == 'euskalibur':
+            return _get_session_event_files_euskalibur(
+                self.layout, self.subject, session, task, run=run
+            )
+        elif self.dataset == 'ibc':
+            return _get_session_event_files_ibc(
+                self.layout, self.subject, session, task, ped=ped
+            )
+        else:
+            raise NotImplementedError(f"Event file retrieval not implemented for {self.dataset} dataset.")
 
     def get_session_fmri_files(
         self, 
         session: str, 
         task: str, 
         run: str | None = None,
+        ped: str | None = None,
         desc:  Literal['preproc', 'preprocfinal'] = 'preproc'
     ) -> list[str]:
         """
@@ -319,6 +377,10 @@ class FileMapper:
             The task identifier.
         run : str, optional
             The run identifier. If provided, only files for this run will be returned.
+        ped : str, optional
+            The phase encoding direction of the fMRI data. If provided, only files
+            with this direction will be returned. Options are 'ap' (anterior-posterior)
+            and 'pa' (posterior-anterior).
         desc : Literal['preproc', 'preprocfinal']
             The description entity to filter files. Defaults to 'preproc' for 
             the output of fMRIPrep preprocessing. Use 'preprocfinal' for 
@@ -329,9 +391,19 @@ class FileMapper:
         list of str
             A list of fMRI file paths.
         """
+        if ped is not None:
+            if ped == 'ap':
+                _ped = 'j-'
+            elif ped == 'pa':
+                _ped = 'j'
+            else:
+                raise ValueError("ped must be 'ap' or 'pa'")
+        else:
+            _ped = None
+
         bids_files = self.layout.get(
             subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
-            run=run, desc=desc, echo=None
+            run=run, desc=desc, echo=None, PhaseEncodingDirection=_ped
         )
         filenames = [f.path for f in bids_files]
         return filenames
@@ -371,47 +443,6 @@ class FileMapper:
         filenames = [f.path for f in bids_files]
         return filenames
 
-    def get_session_event_files(
-        self, 
-        session: str, 
-        task: str, 
-        run: str | None = None
-    ) -> list[tuple[str, str]]:
-        """
-        Get the event files for a specific session and task. Event files
-        include task onset and duration 1D files output from AFNI preprocessing.
-
-        Parameters
-        ----------
-        session : str
-            The session identifier.
-        task : str
-            The task identifier.
-        run : str, optional
-            The run identifier. If provided, only files for this run will be returned.
-
-        Returns
-        -------
-        list of tuple of str
-            A list of onset and duration file path tuples (onset, duration).
-        """
-        bids_files_onset = self.layout.get(
-            subject=self.subject, session=session, task=task, suffix='onset', extension='.1D',
-            run=run
-        )
-        fp_onsets = [f.path for f in bids_files_onset]
-        # for the simon task, no duration files are provided from congruent/incongruent events
-        # so we will return None for duration files
-        if task == 'simon':
-            fp_durations = [''] * len(bids_files_onset)
-        else:
-            bids_files_duration = self.layout.get(
-                subject=self.subject, session=session, task=task, suffix='duration', extension='.1D',
-                run=run
-            )
-            fp_durations = [f.path for f in bids_files_duration]
-        return list(zip(fp_onsets, fp_durations))
-
 
 def get_dataset_subjects(dataset: str) -> List[str]:
     """
@@ -441,3 +472,98 @@ def get_dataset_subjects(dataset: str) -> List[str]:
         raise ValueError("Dataset must be 'euskalibur'")
 
     return subjects
+
+
+    
+def _get_session_event_files_euskalibur(
+    layout: BIDSLayout,
+    subject: str,
+    session: str, 
+    task: str, 
+    run: str | None = None
+) -> list[tuple[str, str]]:
+    """
+    Get the event files for a specific session and task for EuskalIBUR dataset. 
+    Event files include task onset and duration 1D files output from AFNI preprocessing.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+        The BIDS layout object.
+    subject : str
+        The subject identifier.
+    session : str
+        The session identifier.
+    task : str
+        The task identifier.
+    run : str, optional
+        The run identifier. If provided, only files for this run will be returned.
+
+    Returns
+    -------
+    list of tuple of str
+        A list of onset and duration file path tuples (onset, duration).
+    """
+    bids_files_onset = layout.get(
+        subject=subject, session=session, task=task, suffix='onset', extension='.1D',
+        run=run
+    )
+    fp_onsets = [f.path for f in bids_files_onset]
+    # for the simon task, no duration files are provided from congruent/incongruent events
+    # so we will return None for duration files
+    if task == 'simon':
+        fp_durations = [''] * len(bids_files_onset)
+    else:
+        bids_files_duration = layout.get(
+            subject=subject, session=session, task=task, suffix='duration', extension='.1D',
+            run=run
+        )
+        fp_durations = [f.path for f in bids_files_duration]
+    return list(zip(fp_onsets, fp_durations))
+
+
+def _get_session_event_files_ibc(
+    layout: BIDSLayout,
+    subject: str,
+    session: str, 
+    task: str, 
+    ped: str | None = None
+) -> list[str]:
+    """
+    Get the event files for a specific session and task for IBC dataset. Event files
+    are in BIDS format.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+        The BIDS layout object.
+    subject : str
+        The subject identifier.
+    session : str
+        The session identifier.
+    task : str
+        The task identifier.
+    ped: str | None = None
+        The phase encoding direction of the fMRI data. If provided, only files
+        with this direction will be returned. Options are 'ap' (anterior-posterior)
+        and 'pa' (posterior-anterior).
+
+    Returns
+    -------
+    list of str
+        A list of event file paths.
+    """
+    if ped is not None:
+        if ped not in ('ap', 'pa'):
+            raise ValueError("ped must be 'ap' or 'pa'")
+    # for some reason, the PhaseEncodingDirection entity is not recognized for event files in IBC
+    # so we will filter manually after retrieving the files
+    ev_files = layout.get(
+        subject=subject, session=session, task=task, suffix='events', extension='.tsv'
+    )
+    if ped is not None:
+        fp_events = [f.path for f in ev_files if f"dir-{ped}" in f.filename]
+    else:
+        fp_events = [f.path for f in ev_files]
+        
+    return fp_events
