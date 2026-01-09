@@ -398,13 +398,17 @@ class FileMapper:
                 _ped = 'j'
             else:
                 raise ValueError("ped must be 'ap' or 'pa'")
+            bids_files = self.layout.get(
+                subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
+                run=run, desc=desc, echo=None, PhaseEncodingDirection=_ped
+            )
         else:
-            _ped = None
+            # passing _ped as None does not work, so we have to have a separate call
+            bids_files = self.layout.get(
+                subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
+                run=run, desc=desc, echo=None
+            )
 
-        bids_files = self.layout.get(
-            subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
-            run=run, desc=desc, echo=None, PhaseEncodingDirection=_ped
-        )
         filenames = [f.path for f in bids_files]
         return filenames
 
@@ -565,5 +569,5 @@ def _get_session_event_files_ibc(
         fp_events = [f.path for f in ev_files if f"dir-{ped}" in f.filename]
     else:
         fp_events = [f.path for f in ev_files]
-        
+
     return fp_events
