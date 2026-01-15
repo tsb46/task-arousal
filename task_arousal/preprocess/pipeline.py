@@ -1,8 +1,8 @@
 """
 Preprocessing pipeline for fMRI and physiological data.
 
-fMRI preprocessing is performed on outputs from fMRIPrep for EuskalIBUR and minimal preprocessing
-pipeline for IBC, including:
+fMRI preprocessing is performed on outputs from fMRIPrep for EuskalIBUR, Precision 
+Association Networks and minimal preprocessing pipeline for IBC, including:
 
 1) Drop dummy volumes
 2) Detrending
@@ -35,7 +35,9 @@ from scipy.stats import zscore
 from task_arousal.constants import (
     MASK_EUSKALIBUR,
     MASK_IBC,
+    MASK_PAN,
     TR_EUSKALIBUR,
+    TR_PAN,
     SLICE_TIMING_REF
 )
 from task_arousal.io.file import FileMapper
@@ -52,6 +54,7 @@ from task_arousal.constants import (
     HIGHPASS,
     FWHM_EUSKALIBUR,
     FWHM_IBC,
+    FWHM_PAN,
     PHYSIO_COLUMNS_EUSKALIBUR,
     PHYSIO_RESAMPLE_F
 )
@@ -63,20 +66,20 @@ class PreprocessingPipeline:
     """
     def __init__(
         self, 
-        dataset: Literal['euskalibur', 'ibc'], 
+        dataset: Literal['euskalibur', 'ibc', 'pan'], 
         subject: str
     ):
         """Initialize the preprocessing pipeline for a specific dataset and subject.
 
         Parameters
         ----------
-            dataset (Literal['euskalibur', 'ibc']): The dataset identifier.
+            dataset (Literal['euskalibur', 'ibc', 'pan']): The dataset identifier.
             subject (str): The subject identifier.
         """
         self.subject = subject
         self.dataset = dataset
         # map file paths associated to subject
-        if dataset in ['euskalibur', 'ibc']:
+        if dataset in ['euskalibur', 'ibc', 'pan']:
             self.file_mapper = FileMapper(dataset, subject)
         else:
             raise ValueError(f"Dataset '{dataset}' is not supported.")
@@ -151,13 +154,21 @@ class PreprocessingPipeline:
                     # get TR based on dataset
                     if self.dataset == 'euskalibur':
                         tr = TR_EUSKALIBUR
+                        resample = False
+                        remove_dummy = True
+                    elif self.dataset == 'pan':
+                        tr = TR_PAN
+                        resample = True
+                        remove_dummy = False
                     elif self.dataset == 'ibc':
                         # get TR from BIDS layout - scan metadata is same for all runs of a task 
                         tr = self.file_mapper.layout.get_tr(derivatives=True, task=task_proc)
+                        resample = False
+                        remove_dummy = True
                     else:
                         raise ValueError(f"Unknown dataset: {self.dataset}")
                     # Apply the functional MRI preprocessing pipeline
-                    fmri_proc = func_pipeline(self.dataset, fmri_file, tr)
+                    fmri_proc = func_pipeline(self.dataset, fmri_file, tr, resample=resample, remove_dummy=remove_dummy)
                     # Write out the preprocessed fMRI file
                     self.write_out_fmri_file(fmri_proc, fmri_file)
 
@@ -255,7 +266,7 @@ class PreprocessingPipeline:
         )
 
 
-def func_pipeline(dataset: str, func_fp: str, tr: float, resample: bool = False) -> nib.nifti1.Nifti1Image:
+def func_pipeline(dataset: str, func_fp: str, tr: float, resample: bool = False, remove_dummy: bool = True) -> nib.nifti1.Nifti1Image:
     """
     Function pipeline for processing functional MRI data.
 
@@ -288,6 +299,9 @@ def func_pipeline(dataset: str, func_fp: str, tr: float, resample: bool = False)
     elif dataset == 'ibc':
         mask = MASK_IBC
         fwhm = FWHM_IBC
+    elif dataset == 'pan':
+        mask = MASK_PAN
+        fwhm = FWHM_PAN
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 
@@ -311,7 +325,10 @@ def func_pipeline(dataset: str, func_fp: str, tr: float, resample: bool = False)
     # ensure is nifti.nifti1.Nifti1Image
     assert isinstance(func_img, nib.nifti1.Nifti1Image), "Loaded fMRI data is not a Nifti1Image."
 
-    func_img_proc = _func_trim(func_img, DUMMY_VOLUMES)
+    if remove_dummy:
+        func_img_proc = _func_trim(func_img, DUMMY_VOLUMES)
+    else:
+        func_img_proc = func_img
 
     # using the clean_img function to detrend, high-pass filter, and standardize the signal
     func_img_proc = clean_img(

@@ -12,6 +12,7 @@ from bids import BIDSLayout
 from task_arousal.constants import (
     DATA_DIRECTORY_EUSKALIBUR, 
     DATA_DIRECTORY_IBC,
+    DATA_DIRECTORY_PAN,
     IS_DERIVED
 )
 
@@ -23,7 +24,7 @@ class FileMapper:
     
     def __init__(
         self,
-        dataset: Literal['euskalibur', 'ibc'],
+        dataset: Literal['euskalibur', 'ibc', 'pan'],
         subject: str
     ):
         """
@@ -31,7 +32,7 @@ class FileMapper:
 
         Parameters
         ----------
-        dataset : {'euskalibur', 'ibc'}
+        dataset : {'euskalibur', 'ibc', 'pan'}
             The dataset name.
         subject : str
             The subject identifier.
@@ -61,6 +62,8 @@ class FileMapper:
                     self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, is_derivative=True, ignore=[ignore_pattern])
                 else:
                     self.layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, derivatives=True, ignore=[ignore_pattern])
+            elif self.dataset == 'pan':
+                self.layout = BIDSLayout(DATA_DIRECTORY_PAN, ignore=[ignore_pattern], is_derivative=True, derivatives=True)
             elif self.dataset == 'ibc':
                 self.layout = BIDSLayout(DATA_DIRECTORY_IBC, ignore=[ignore_pattern], is_derivative=True)
 
@@ -68,7 +71,9 @@ class FileMapper:
         self.available_subjects = self.layout.get_subjects()
         # check whether any subjects are found
         if not self.available_subjects:
-            raise RuntimeError(f"No subjects found in BIDS directory: {DATA_DIRECTORY_EUSKALIBUR}")
+            raise RuntimeError(f"No subjects found in BIDS directory: {
+                DATA_DIRECTORY_EUSKALIBUR if self.dataset == 'euskalibur' else DATA_DIRECTORY_IBC if self.dataset == 'ibc' else DATA_DIRECTORY_PAN
+            }")
 
         # check if subject is valid
         if subject not in self.available_subjects:
@@ -356,6 +361,10 @@ class FileMapper:
                 self.layout, self.subject, session, task, ped=ped,
                 run=run
             )
+        elif self.dataset == 'pan':
+            return _get_session_event_files_pan(
+                self.layout, self.subject, session, task, run=run
+            )
         else:
             raise NotImplementedError(f"Event file retrieval not implemented for {self.dataset} dataset.")
 
@@ -570,5 +579,43 @@ def _get_session_event_files_ibc(
         fp_events = [f.path for f in ev_files if f"dir-{ped}" in f.filename]
     else:
         fp_events = [f.path for f in ev_files]
+
+    return fp_events
+
+
+def _get_session_event_files_pan(
+    layout: BIDSLayout,
+    subject: str,
+    session: str, 
+    task: str, 
+    run: str | None = None
+) -> list[str]:
+    """
+    Get the event files for a specific session and task for PAN dataset. Event files
+    are in BIDS format.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+        The BIDS layout object.
+    subject : str
+        The subject identifier.
+    session : str
+        The session identifier.
+    task : str
+        The task identifier.
+    run : str, optional
+        The run identifier. If provided, only files for this run will be returned.
+
+    Returns
+    -------
+    list of str
+        A list of event file paths.
+    """
+    ev_files = layout.get(
+        subject=subject, session=session, task=task, extension='.1D',
+        run=run
+    )
+    fp_events = [f.path for f in ev_files]
 
     return fp_events

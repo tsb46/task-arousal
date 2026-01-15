@@ -20,3 +20,8 @@ dependencies = [
 ]
 [tool.setuptools.packages.find]
 where = ["task_arousal"]
+
+[dependency-groups]
+dev = [
+    "templateflow>=25.1.1",
+]

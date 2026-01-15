@@ -729,6 +729,15 @@ wheels = [
 ]
 
 [[package]]
+name = "platformdirs"
+version = "4.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cf/86/0248f086a84f01b37aaec0fa567b397df1a119f73c16f6c7a9aac73ea309/platformdirs-4.5.1.tar.gz", hash = "sha256:61d5cdcc6065745cdd94f0f878977f8de9437be93de97c1c12f853c9c0cdcbda", size = 21715, upload-time = "2025-12-05T13:52:58.638Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/28/3bfe2fa5a7b9c46fe7e13c97bda14c895fb10fa2ebf1d0abb90e0cea7ee1/platformdirs-4.5.1-py3-none-any.whl", hash = "sha256:d03afa3963c806a9bed9d5125c8f4cb2fdaf74a55ab60e5d59b3fde758104d31", size = 18731, upload-time = "2025-12-05T13:52:56.823Z" },
+]
+
+[[package]]
 name = "pybids"
 version = "0.19.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1039,6 +1048,11 @@ dependencies = [
     { name = "umap-learn" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "templateflow" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "fbpca", specifier = ">=1.0" },
@@ -1053,6 +1067,25 @@ requires-dist = [
     { name = "pyqt5", specifier = ">=5.15.11" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "umap-learn", specifier = ">=0.5.9.post2" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "templateflow", specifier = ">=25.1.1" }]
+
+[[package]]
+name = "templateflow"
+version = "25.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "acres" },
+    { name = "platformdirs" },
+    { name = "pybids" },
+    { name = "requests" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8c/37/61f043b171d3b3f4de5f56459be370eda8d2ef4544bf8eeb6845645630de/templateflow-25.1.1.tar.gz", hash = "sha256:bf2714c3359ff09c867f3e705ed8b54a13ea1064046a5f0a63f40c67abbae0c3", size = 2147142, upload-time = "2025-10-21T17:11:20.554Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fe/50/bd8253d4bed097f240dab6c28058636681b6f4de5ab9cb12612e092868db/templateflow-25.1.1-py3-none-any.whl", hash = "sha256:5508d748597c6b3e06ea79e931cacebda837c9444d86565a1784278ecb7aec82", size = 707618, upload-time = "2025-10-21T17:11:18.905Z" },
 ]
 
 [[package]]
