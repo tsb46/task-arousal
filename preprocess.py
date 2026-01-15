@@ -10,7 +10,7 @@ from task_arousal.io.file import get_dataset_subjects
 from task_arousal.preprocess.pipeline import PreprocessingPipeline
 
 
-def main(dataset: Literal['euskalibur', 'ibc'], subject: str | None = None):
+def main(dataset: Literal['euskalibur', 'ibc', 'pan'], subject: str | None = None):
     """Perform full preprocessing pipeline on selected subject or all subjects."""
     # loop through tasks and preprocess
     if subject is None:
@@ -18,8 +18,8 @@ def main(dataset: Literal['euskalibur', 'ibc'], subject: str | None = None):
     else:
         subjects = [subject]
     
-    # preprocess by subject for EuskaliBUR and IBC
-    if dataset in ['euskalibur', 'ibc']:
+    # preprocess by subject for EuskaliBUR, IBC, and PAN
+    if dataset in ['euskalibur', 'ibc', 'pan']:
         for subject in subjects:
             print(f'Starting preprocessing for subject: {subject}')
             pipeline = PreprocessingPipeline(dataset, subject)
@@ -42,7 +42,7 @@ if __name__ == '__main__':
         '--dataset',
         type=str,
         required=True,
-        choices=['euskalibur', 'ibc'],
+        choices=['euskalibur', 'ibc', 'pan'],
         help='Dataset to perform preprocessing pipeline.',
     )
     parser.add_argument(
