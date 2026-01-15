@@ -353,7 +353,8 @@ class FileMapper:
             )
         elif self.dataset == 'ibc':
             return _get_session_event_files_ibc(
-                self.layout, self.subject, session, task, ped=ped
+                self.layout, self.subject, session, task, ped=ped,
+                run=run
             )
         else:
             raise NotImplementedError(f"Event file retrieval not implemented for {self.dataset} dataset.")
@@ -392,24 +393,21 @@ class FileMapper:
             A list of fMRI file paths.
         """
         if ped is not None:
-            if ped == 'ap':
-                _ped = 'j-'
-            elif ped == 'pa':
-                _ped = 'j'
-            else:
+            if ped not in ('ap', 'pa'):
                 raise ValueError("ped must be 'ap' or 'pa'")
-            bids_files = self.layout.get(
-                subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
-                run=run, desc=desc, echo=None, PhaseEncodingDirection=_ped
-            )
-        else:
-            # passing _ped as None does not work, so we have to have a separate call
-            bids_files = self.layout.get(
-                subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
-                run=run, desc=desc, echo=None
-            )
 
-        filenames = [f.path for f in bids_files]
+        # for some reason, filtering by PhaseEncodingDirection entity does not work for some files
+        # so we will filter manually after retrieving the files
+        bids_files = self.layout.get(
+            subject=self.subject, session=session, task=task, suffix='bold', extension='.nii.gz',
+            run=run, desc=desc, echo=None
+        )
+
+        if ped is not None:
+            filenames = [f.path for f in bids_files if f"dir-{ped}" in f.filename]
+        else:
+            filenames = [f.path for f in bids_files]
+
         return filenames
 
     def get_session_physio_files(
@@ -477,7 +475,6 @@ def get_dataset_subjects(dataset: str) -> List[str]:
 
     return subjects
 
-
     
 def _get_session_event_files_euskalibur(
     layout: BIDSLayout,
@@ -531,7 +528,8 @@ def _get_session_event_files_ibc(
     subject: str,
     session: str, 
     task: str, 
-    ped: str | None = None
+    ped: str | None = None,
+    run: str | None = None
 ) -> list[str]:
     """
     Get the event files for a specific session and task for IBC dataset. Event files
@@ -551,6 +549,8 @@ def _get_session_event_files_ibc(
         The phase encoding direction of the fMRI data. If provided, only files
         with this direction will be returned. Options are 'ap' (anterior-posterior)
         and 'pa' (posterior-anterior).
+    run : str, optional
+        The run identifier. If provided, only files for this run will be returned.
 
     Returns
     -------
@@ -563,7 +563,8 @@ def _get_session_event_files_ibc(
     # for some reason, the PhaseEncodingDirection entity is not recognized for event files in IBC
     # so we will filter manually after retrieving the files
     ev_files = layout.get(
-        subject=subject, session=session, task=task, suffix='events', extension='.tsv'
+        subject=subject, session=session, task=task, suffix='events', extension='.tsv',
+        run=run
     )
     if ped is not None:
         fp_events = [f.path for f in ev_files if f"dir-{ped}" in f.filename]

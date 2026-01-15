@@ -5,7 +5,6 @@ Analysis package exports.
 from .rrr import RRREventPhysioModel
 from .dlm import (
     DistributedLagEventModel,
-    DistributedLagCommonalityAnalysis,
     DistributedLagPhysioModel
 )
 from .glm import GLM, GLMPhysio

@@ -6,10 +6,12 @@
       "horizontal_checkerboard",
       "vertical_checkerboard",
       "video_computation",
-      "video_left_button_press",
-      "video_right_button_press",
+      "video_left_hand",
+      "video_right_hand",
       "video_sentence"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "ArchiSpatial": {
     "condition": [
@@ -17,8 +19,10 @@
       "object_orientation",
       "rotation_hand",
       "rotation_side",
-      "saccades"
-    ]
+      "saccade"
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "ArchiSocial": {
     "condition": [
@@ -26,11 +30,13 @@
       "false_belief_video",
       "mechanistic_audio",
       "mechanistic_video",
-      "non_speech_sound",
-      "speech_sound",
-      "triangle_mental",
+      "non_speech",
+      "speech",
+      "triangle_intention",
       "triangle_random"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "ArchiEmotional": {
     "condition": [
@@ -40,13 +46,19 @@
       "face_control",
       "face_gender",
       "face_trusty"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "HcpEmotion": {
-    "condition": ["face", "shape"]
+    "condition": ["face", "shape"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "HcpGambling": {
-    "condition": ["punishment", "reward"]
+    "condition": ["punishment", "reward"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "HcpMotor": {
     "condition": [
@@ -56,16 +68,30 @@
       "right_foot",
       "right_hand",
       "tongue"
-    ]
+    ],
+    "condition_grouper": {
+      "right_foot_cue": "cue",
+      "left_foot_cue": "cue",
+      "right_hand_cue": "cue",
+      "left_hand_cue": "cue",
+      "tongue_cue": "cue"
+    },
+    "condition_ignore": []
   },
   "HcpLanguage": {
-    "condition": ["math", "story"]
+    "condition": ["math", "story"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "HcpRelational": {
-    "condition": ["match", "relational"]
+    "condition": ["control", "relational"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "HcpSocial": {
-    "condition": ["mental", "random"]
+    "condition": ["mental", "random"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "HcpWm": {
     "condition": [
@@ -77,85 +103,179 @@
       "2back_face",
       "2back_place",
       "2back_tools"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "RSVPLanguage": {
     "condition": [
       "complex",
-      "consonant_string",
+      "consonant_strings",
       "jabberwocky",
       "probe",
       "pseudoword_list",
       "simple",
       "word_list"
-    ]
+    ],
+    "condition_grouper": {
+      "complex_sentence_objrel": "complex",
+      "complex_sentence_objclef": "complex",
+      "complex_sentence_subjrel": "complex",
+      "simple_sentence_cvp": "simple",
+      "simple_sentence_adj": "simple",
+      "simple_sentence_coord": "simple"
+    },
+    "condition_ignore": []
   },
   "MTTWE": {
     "condition": [
-      "we_after_event",
+      "we_westside_close_event",
       "we_all_event_response",
-      "we_all_space_cue",
+      "we_eastside_close_event",
+      "we_all_reference",
       "we_all_time_cue",
-      "we_average_reference",
-      "we_before_event",
-      "we_eastside_event",
-      "we_westside_event"
-    ]
+      "we_after_close_event",
+      "we_before_close_event",
+      "we_all_space_cue",
+      "we_eastside_far_event",
+      "we_westside_far_event",
+      "we_before_far_event",
+      "we_after_far_event"
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "MTTNS": {
     "condition": [
-      "sn_after_event",
+      "sn_southside_far_event",
       "sn_all_event_response",
-      "sn_all_space_cue",
+      "sn_northside_far_event",
+      "sn_all_reference",
       "sn_all_time_cue",
-      "sn_average_reference",
-      "sn_before_event",
-      "sn_northside_event",
-      "sn_southside_event"
-    ]
+      "sn_after_close_event",
+      "sn_before_close_event",
+      "sn_all_space_cue",
+      "sn_northside_close_event",
+      "sn_southside_close_event",
+      "sn_after_far_event",
+      "sn_before_far_event"
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "PreferenceFood": {
-    "condition": ["food_constant", "food_linear", "food_quadratic"]
+    "condition": ["food"],
+    "condition_grouper": {
+      "food_too-slow": "food"
+    },
+    "condition_ignore": []
   },
   "PreferencePaintings": {
-    "condition": ["painting_constant", "painting_linear", "painting_quadratic"]
+    "condition": ["painting"],
+    "condition_grouper": {
+      "painting_too-slow": "painting"
+    },
+    "condition_ignore": []
   },
   "PreferenceFaces": {
-    "condition": ["face_constant", "face_linear", "face_quadratic"]
+    "condition": ["face"],
+    "condition_grouper": {
+      "face_too-slow": "face"
+    },
+    "condition_ignore": []
   },
   "PreferenceHouses": {
-    "condition": ["house_constant", "house_linear", "house_quadratic"]
+    "condition": ["house"],
+    "condition_grouper": {
+      "house_too-slow": "house"
+    },
+    "condition_ignore": []
   },
   "TheoryOfMind": {
-    "condition": ["belief", "photo"]
+    "condition": ["belief", "photo"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "EmotionalPain": {
-    "condition": ["emotional_pain", "physical_pain"]
+    "condition": ["emotional_pain", "physical_pain"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "PainMovie": {
-    "condition": ["movie_mental", "movie_pain"]
+    "condition": ["pain", "mental"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "VSTM": {
-    "condition": ["vstm_constant", "vstm_linear", "vstm_quadratic"]
+    "condition": ["memorization", "response"],
+    "condition_grouper": {
+      "memorization_num_6": "memorization",
+      "response_num_6": "response",
+      "memorization_num_3": "memorization",
+      "response_num_3": "response",
+      "memorization_num_5": "memorization",
+      "response_num_5": "response",
+      "memorization_num_4": "memorization",
+      "response_num_4": "response",
+      "memorization_num_1": "memorization",
+      "response_num_1": "response",
+      "memorization_num_2": "memorization",
+      "response_num_2": "response"
+    },
+    "condition_ignore": []
   },
   "Enumeration": {
-    "condition": [
-      "enumeration_constant",
-      "enumeration_linear",
-      "enumeration_quadratic"
-    ]
+    "condition": ["memorization", "response"],
+    "condition_grouper": {
+      "memorization_num_6": "memorization",
+      "response_num_6": "response",
+      "memorization_num_4": "memorization",
+      "response_num_4": "response",
+      "memorization_num_1": "memorization",
+      "response_num_1": "response",
+      "memorization_num_5": "memorization",
+      "response_num_5": "response",
+      "memorization_num_2": "memorization",
+      "response_num_2": "response",
+      "memorization_num_3": "memorization",
+      "response_num_3": "response",
+      "memorization_num_7": "memorization",
+      "response_num_7": "response",
+      "memorization_num_8": "memorization",
+      "response_num_8": "response"
+    },
+    "condition_ignore": []
   },
   "Self": {
     "condition": [
       "encode_other",
       "encode_self",
+      "false_alarm",
       "instructions",
-      "recognition_other_hit",
-      "recognition_self_hit"
-    ]
+      "recognition_self",
+      "recognition_other"
+    ],
+    "condition_grouper": {
+      "self_relevance_with_response": "encode_self",
+      "other_relevance_with_response": "encode_other",
+      "self_relevance_with_no_response": "encode_self",
+      "self_relevance_no_response": "encode_self",
+      "other_relevance_no_response": "encode_other",
+      "other_relevance_with_no_response": "encode_other",
+      "old_self_hit": "recognition_self",
+      "old_self_miss": "recognition_self",
+      "old_other_hit": "recognition_other",
+      "old_other_miss": "recognition_other",
+      "new_fa": "false_alarm",
+      "old_self_no_response": "recognition_self",
+      "old_other_no_response": "recognition_other"
+    },
+    "condition_ignore": ["new_no_response"]
   },
   "Bang": {
-    "condition": ["no_talk", "talk"]
+    "condition": ["no_talk", "talk"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "WedgeClock": {
     "condition": [
@@ -167,7 +287,9 @@
       "upper_left",
       "upper_meridian",
       "upper_right"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "WedgeAnti": {
     "condition": [
@@ -179,16 +301,24 @@
       "upper_left",
       "upper_meridian",
       "upper_right"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "ContRing": {
-    "condition": ["foveal", "middle", "peripheral"]
+    "condition": ["foveal", "middle", "peripheral"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "ExpRing": {
-    "condition": ["foveal", "middle", "peripheral"]
+    "condition": ["foveal", "middle", "peripheral"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "Lec2": {
-    "condition": ["attend", "unattend"]
+    "condition": ["attend", "unattend"],
+    "condition_grouper": {},
+    "condition_ignore": ["Bfix", "start_random_string"]
   },
   "Audi": {
     "condition": [
@@ -200,12 +330,15 @@
       "laugh",
       "music",
       "reverse",
-      "silence",
       "speech",
       "suomi",
       "tear",
       "yawn"
-    ]
+    ],
+    "condition_grouper": {
+      "envir": "environment"
+    },
+    "condition_ignore": ["silence", "Bfix", "start_sound", "cut", "1"]
   },
   "Visu": {
     "condition": [
@@ -218,32 +351,46 @@
       "scene",
       "scrambled",
       "tool"
-    ]
+    ],
+    "condition_grouper": {
+      "visage": "face",
+      "target_fruit": "fruit"
+    },
+    "condition_ignore": ["Bfix"]
   },
   "Lec1": {
-    "condition": ["pseudoword", "random_string", "word"]
+    "condition": ["pseudoword", "random_string", "word"],
+    "condition_grouper": {},
+    "condition_ignore": [
+      "Bfix",
+      "start_random_string",
+      "start_pseudoword",
+      "start_word"
+    ]
   },
   "MVEB": {
-    "condition": [
-      "2_letters_different",
-      "2_letters_same",
-      "4_letters_different",
-      "4_letters_same",
-      "6_letters_different",
-      "6_letters_same",
-      "letter_occurrence_response"
-    ]
+    "condition": ["letters_same", "letters_different", "response"],
+    "condition_grouper": {
+      "2_letters_same": "letters_same",
+      "4_letters_same": "letters_same",
+      "6_letters_same": "letters_same",
+      "2_letters_different": "letters_different",
+      "4_letters_different": "letters_different",
+      "6_letters_different": "letters_different"
+    },
+    "condition_ignore": ["cross", "blank2"]
   },
   "MVIS": {
-    "condition": [
-      "2_dots",
-      "2_dots_control",
-      "4_dots",
-      "4_dots_control",
-      "6_dots",
-      "6_dots_control",
-      "dot_displacement_response"
-    ]
+    "condition": ["dots", "dots_control", "response"],
+    "condition_grouper": {
+      "2_dots": "dots",
+      "2_dots_control": "dots_control",
+      "4_dots": "dots",
+      "4_dots_control": "dots_control",
+      "6_dots": "dots",
+      "6_dots_control": "dots_control"
+    },
+    "condition_ignore": ["grid", "Bfix", "maintenance"]
   },
   "Moto": {
     "condition": [
@@ -257,8 +404,22 @@
       "saccade_left",
       "saccade_right",
       "tongue_left",
-      "tongue_right"
-    ]
+      "tongue_right",
+      "instructions"
+    ],
+    "condition_grouper": {
+      "Ins_bouche": "instructions",
+      "Ins_index": "instructions",
+      "Ins_jambe": "instructions",
+      "Ins_main": "instructions",
+      "Ins_repos": "instructions",
+      "Ins_yeux": "instructions",
+      "sacaade_right": "saccade_right",
+      "sacaade_left": "saccade_left",
+      "fixation_left": "fixation",
+      "fixation_right": "fixation"
+    },
+    "condition_ignore": ["Bfix"]
   },
   "MCSE": {
     "condition": [
@@ -266,7 +427,12 @@
       "high_salience_right",
       "low_salience_left",
       "low_salience_right"
-    ]
+    ],
+    "condition_grouper": {
+      "hi_salience_left": "high_salience_left",
+      "hi_salience_right": "high_salience_right"
+    },
+    "condition_ignore": ["Bfix"]
   },
   "Audio": {
     "condition": [
@@ -278,7 +444,9 @@
       "speech",
       "tool",
       "voice"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": ["fixation"]
   },
   "Attention": {
     "condition": [
@@ -288,10 +456,14 @@
       "spatial_congruent",
       "spatial_cue",
       "spatial_incongruent"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "StopSignal": {
-    "condition": ["go", "stop"]
+    "condition": ["go", "stop"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "TwoByTwo": {
     "condition": [
@@ -303,19 +475,29 @@
       "stim_taskstay_cueswitch",
       "stim_taskswitch_cuestay",
       "stim_taskswitch_cueswitch"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "Discount": {
-    "condition": ["amount", "delay"]
+    "condition": ["amount", "delay"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "SelectiveStopSignal": {
-    "condition": ["go_critical", "go_noncritical", "ignore", "stop"]
+    "condition": ["go_critical", "go_noncritical", "ignore", "stop"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "Stroop": {
-    "condition": ["congruent", "incongruent"]
+    "condition": ["congruent", "incongruent"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "ColumbiaCards": {
-    "condition": ["gain", "loss", "num_loss_cards"]
+    "condition": ["gain", "loss", "num_loss_cards"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "DotPatterns": {
     "condition": [
@@ -324,7 +506,9 @@
       "cue",
       "incorrect_cue_correct_probe",
       "incorrect_cue_incorrect_probe"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "WardAndAllport": {
     "condition": [
@@ -332,7 +516,9 @@
       "planning_ambiguous_intermediate",
       "planning_unambiguous_direct",
       "planning_unambiguous_intermediate"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "BiologicalMotion1": {
     "condition": [
@@ -340,7 +526,9 @@
       "global_upright",
       "natural_inverted",
       "natural_upright"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "BiologicalMotion2": {
     "condition": [
@@ -348,7 +536,9 @@
       "modified_upright",
       "natural_inverted",
       "natural_upright"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "MathLanguage": {
     "condition": [
@@ -368,21 +558,36 @@
       "theory_of_mind_visual",
       "wordlist_auditory",
       "wordlist_visual"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": ["keypressed", "empty", "blank", "bip"]
   },
   "SpatialNavigation": {
-    "condition": [
-      "control",
-      "encoding_phase",
-      "experimental",
+    "condition": ["control", "pointing_control", "pointing_experimental"],
+    "condition_grouper": {
+      "intersection_0": "intersection",
+      "intersection_1": "intersection",
+      "intersection_2": "intersection",
+      "intersection_3": "intersection",
+      "encoding_end": "encoding_phase"
+    },
+    "condition_ignore": [
       "intersection",
+      "experimental",
       "navigation",
-      "pointing_control",
-      "pointing_experimental"
+      "fixation",
+      "encoding_phase"
     ]
   },
   "EmoMem": {
-    "condition": ["negative_image", "neutral_image", "object", "positive_image"]
+    "condition": [
+      "negative_image",
+      "neutral_image",
+      "object",
+      "positive_image"
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "EmoReco": {
     "condition": [
@@ -390,16 +595,24 @@
       "angry_male",
       "neutral_female",
       "neutral_male"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "StopNogo": {
-    "condition": ["go", "nogo", "successful_stop", "unsuccessful_stop"]
+    "condition": ["go", "nogo", "successful_stop", "unsuccessful_stop"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "Catell": {
-    "condition": ["easy", "hard"]
+    "condition": ["easy", "hard"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "FingerTapping": {
-    "condition": ["chosen", "no_tap", "specified"]
+    "condition": ["chosen", "no_tap", "specified"],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "VSTMC": {
     "condition": [
@@ -409,7 +622,9 @@
       "stim_load1",
       "stim_load2",
       "stim_load3"
-    ]
+    ],
+    "condition_grouper": {},
+    "condition_ignore": []
   },
   "RewProc": {
     "condition": [

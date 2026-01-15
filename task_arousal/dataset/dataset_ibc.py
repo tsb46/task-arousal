@@ -116,11 +116,22 @@ class DatasetIbc:
         # get conditions for task
         try:
             conditions = IBC_CONDITIONS[task]
+            # get grouping of conditions, if any
+            condition_grouper = conditions.get('condition_grouper', None)
+            if condition_grouper is None:
+                raise ValueError(f"No condition_grouper found for task '{task}'.")
+            # get conditions to ignore, if any
+            condition_ignore = conditions.get('condition_ignore', [])
             has_events = True
         except KeyError:
             print(f"Warning: No conditions found for task '{task}'. Events will not be loaded.")
             conditions = []
             has_events = False
+            condition_grouper = None
+            condition_ignore = []
+
+        # get runs available for task
+        runs = self.file_mapper.tasks_runs[task]
 
         # get sessions avaialble for task
         task_sessions = self.file_mapper.get_sessions_task(task)
@@ -153,50 +164,67 @@ class DatasetIbc:
             for ped in ['pa', 'ap']:
                 if verbose and ped is not None:
                     print(f"    Loading phase encoding direction '{ped}'...")
-            
-                fmri_files = self.file_mapper.get_session_fmri_files(session, task, ped=ped, desc='preprocfinal')
-                # if no fMRI file is found, raise error
-                if len(fmri_files) == 0:
-                    # in some scenarios, fmri may be missing or artifacts, skip loading
-                    if verbose:
-                        print(
-                            f"No fMRI file found for session '{session}' and task "
-                            f"'{task}' and phase encoding direction '{ped}'."
-                        )
-                    continue
-                elif len(fmri_files) > 1:
-                    # raise error if multiple fMRI files are found
-                    raise ValueError(
-                        f"Multiple fMRI files found for session '{session}' and task '{task}' and "
-                        f"phase encoding direction '{ped}'."
+
+                # if runs is empty, create list with None to loop through at least once
+                if len(runs[session]) == 0:
+                    runs_session = [None]
+                else:
+                    runs_session = runs[session]
+                # loop through runs for session
+                for run in runs_session:
+                    if verbose and run is not None:
+                        print(f"    Loading run '{run}'...")
+                    fmri_files = self.file_mapper.get_session_fmri_files(
+                        session, task, ped=ped, run=run, desc='preprocfinal'
                     )
-                # load fMRI file into 2D array or 4D image
-                fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d, verbose=verbose)
-                    
-                # append data to dataset
-                dataset['fmri'].append(fmri_data)
-                # load event files
-                if has_events:
-                    event_file = self.file_mapper.get_session_event_files(session, task, ped=ped)
-                    if len(event_file) == 0:
-                        print(
-                            f"Warning: No event file found for session '{session}' "
-                            f"and task '{task}'."
-                        )
+                    # if no fMRI file is found, raise error
+                    if len(fmri_files) == 0:
+                        # in some scenarios, fmri may be missing or artifacts, skip loading
+                        if verbose:
+                            print(
+                                f"No fMRI file found for session '{session}' and task '{task}' "
+                                f"and phase encoding direction '{ped}'."
+                            )
                         continue
-                    elif len(event_file) > 1:
+                    elif len(fmri_files) > 1:
+                        # raise error if multiple fMRI files are found
                         raise ValueError(
-                            f"Multiple event files found for session '{session}' "
-                            f"and task '{task}'."
+                            f"Multiple fMRI files found for session '{session}' and task '{task}' and "
+                            f"phase encoding direction '{ped}'."
                         )
-                    # convert event file to dataframe
-                    event_df = self.events_to_df(
-                        fp_event=event_file[0], # type: ignore
-                        ped=ped,
-                        session=session,
-                        drop_time=task_time_to_drop
+                    # load fMRI file into 2D array or 4D image
+                    fmri_data = self.load_fmri(
+                        fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d, 
+                        verbose=verbose
                     )
-                    dataset['events'].append(event_df)
+                    # append data to dataset
+                    dataset['fmri'].append(fmri_data)
+                    # load event files
+                    if has_events:
+                        event_file = self.file_mapper.get_session_event_files(
+                            session, task, ped=ped, run=run
+                        )
+                        if len(event_file) == 0:
+                            print(
+                                f"Warning: No event file found for session '{session}' "
+                                f"and task '{task}'."
+                            )
+                            continue
+                        elif len(event_file) > 1:
+                            raise ValueError(
+                                f"Multiple event files found for session '{session}' "
+                                f"and task '{task}'."
+                            )
+                        # convert event file to dataframe
+                        event_df = self.events_to_df(
+                            fp_event=event_file[0], # type: ignore
+                            ped=ped,
+                            session=session,
+                            drop_time=task_time_to_drop,
+                            condition_grouper=condition_grouper,
+                            condition_ignore=condition_ignore
+                        )
+                        dataset['events'].append(event_df)
 
         # concatenate data across sessions if requested
         if concatenate:
@@ -219,7 +247,9 @@ class DatasetIbc:
         fp_event: str,
         ped: str,
         session: str,
-        drop_time: float | None = None
+        drop_time: float | None = None,
+        condition_grouper: dict | None = None,
+        condition_ignore: List[str] | None = None
     ) -> pd.DataFrame:
         """
         Convert 1D onset and duration files (from AFNI)
@@ -236,6 +266,12 @@ class DatasetIbc:
         drop_time : float, optional
             Amount of time (in seconds) to drop from the beginning of the run. If provided,
             onsets will be adjusted accordingly. Default is None.
+        condition_grouper : dict, optional
+            A dictionary mapping original condition names to grouped condition names.
+            If provided, conditions will be grouped accordingly. Default is None.
+        condition_ignore : List[str], optional
+            A list of condition names to ignore. If provided, events with these condition names
+            will be removed from the DataFrame. Default is None.
 
         Returns
         -------
@@ -253,29 +289,13 @@ class DatasetIbc:
             event_df['onset'] = event_df['onset'] - drop_time
             # remove events that occur before time zero
             event_df = event_df[event_df['onset'] >= 0].reset_index(drop=True)
+        # if condition_grouper is provided, map conditions
+        if condition_grouper is not None:
+            event_df['trial_type'] = event_df['trial_type'].replace(condition_grouper)
+        # if condition_ignore is provided, remove those conditions
+        if condition_ignore is not None:
+            event_df = event_df[~event_df['trial_type'].isin(condition_ignore)].reset_index(drop=True)
         return event_df
-    
-    def load_physio(
-        self, 
-        fp: str,
-        normalize: bool = False
-    ) -> pd.DataFrame:
-        """
-        Load the preprocessed physio data from a TSV file.
-
-        Parameters
-        ----------
-        fp : str
-            The path to the physio TSV file.
-        normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension. Default is False.
-
-        Returns
-        -------
-        pd.DataFrame
-            The physio data as a pandas DataFrame.
-        """
-        return _load_physio(fp, normalize=normalize)
 
     def load_fmri(
         self,
