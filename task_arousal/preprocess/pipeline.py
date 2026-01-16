@@ -159,7 +159,7 @@ class PreprocessingPipeline:
                     elif self.dataset == 'pan':
                         tr = TR_PAN
                         resample = True
-                        remove_dummy = False
+                        remove_dummy = True
                     elif self.dataset == 'ibc':
                         # get TR from BIDS layout - scan metadata is same for all runs of a task 
                         tr = self.file_mapper.layout.get_tr(derivatives=True, task=task_proc)
