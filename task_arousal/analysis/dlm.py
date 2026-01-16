@@ -572,6 +572,10 @@ def _create_spline_event_reg(
             trial_durations = event_df[event_df['trial_type'] == trial]['duration'].to_numpy()
             if len(trial_durations) > 0:
                 trial_max = np.max(trial_durations)
+                # if trial durations have the same duration value, it returns a list with one value
+                if isinstance(trial_max, list):
+                    trial_max = trial_max[0]
+                # update max duration if trial_max is greater
                 if trial_max > max_duration:
                     max_duration = trial_max
         trial_durations_dict[trial] = max_duration

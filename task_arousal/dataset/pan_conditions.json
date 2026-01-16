@@ -1,0 +1,118 @@
+{
+  "audvisattn": {
+    "conditions": [
+      "cue",
+      "listenleft",
+      "listenright",
+      "passive",
+      "watchleft",
+      "watchright"
+    ],
+    "duration": {
+      "cue": 2.6,
+      "listenleft": 26.0,
+      "listenright": 26.0,
+      "passive": 26.0,
+      "watchleft": 26.0,
+      "watchright": 26.0
+    }
+  },
+  "audviswm": {
+    "conditions": [
+      "cataudact",
+      "cataudpas",
+      "cue",
+      "dogaudact",
+      "dogaudpas",
+      "femvisact",
+      "femvispas",
+      "malvisact",
+      "malvispas"
+    ],
+    "duration": {
+      "cue": 3.0,
+      "cataudact": 40.0,
+      "cataudpas": 40.0,
+      "dogaudact": 40.0,
+      "dogaudpas": 40.0,
+      "femvisact": 40.0,
+      "femvispas": 40.0,
+      "malvisact": 40.0,
+      "malvispas": 40.0
+    }
+  },
+  "epiproj": {
+    "conditions": [
+      "futurenonself",
+      "futureself",
+      "pastnonself",
+      "pastself",
+      "presentnonself",
+      "presentself"
+    ],
+    "duration": {
+      "futurenonself": 10.0,
+      "futureself": 10.0,
+      "pastnonself": 10.0,
+      "pastself": 10.0,
+      "presentnonself": 10.0,
+      "presentself": 10.0
+    }
+  },
+  "langlocaud": {
+    "conditions": ["deg", "int"],
+    "duration": {
+      "deg": 18.0,
+      "int": 18.0
+    }
+  },
+  "langlocvis": {
+    "conditions": ["non", "sen"],
+    "duration": {
+      "non": 18.0,
+      "sen": 18.0
+    }
+  },
+  "msit": {
+    "conditions": ["easy", "hard"],
+    "duration": {
+      "easy": 42.0,
+      "hard": 42.0
+    }
+  },
+  "spatialwm": {
+    "conditions": ["easy", "hard"],
+    "duration": {
+      "easy": 34.0,
+      "hard": 34.0
+    }
+  },
+  "tomfalse": {
+    "conditions": ["bel", "pic"],
+    "duration": {
+      "bel": 30.0,
+      "pic": 30.0
+    }
+  },
+  "tompain": {
+    "conditions": ["emo", "phy"],
+    "duration": {
+      "emo": 30.0,
+      "phy": 30.0
+    }
+  },
+  "verbalwm": {
+    "conditions": ["easy", "hard"],
+    "duration": {
+      "easy": 34.0,
+      "hard": 34.0
+    }
+  },
+  "vmsit": {
+    "conditions": ["easy", "hard"],
+    "duration": {
+      "easy": 42.0,
+      "hard": 42.0
+    }
+  }
+}
