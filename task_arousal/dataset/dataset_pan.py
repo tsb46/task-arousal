@@ -10,7 +10,7 @@ import pandas as pd
 import nibabel as nib
 import numpy as np
 
-from task_arousal.constants import MASK_PAN
+from task_arousal.constants import MASK_PAN, DUMMY_VOLUMES, TR_PAN
 from task_arousal.io.file import FileMapper
 from .dataset_utils import (
     load_fmri as _load_fmri,
@@ -98,6 +98,9 @@ class DatasetPan:
             conditions = []
             has_events = False
 
+        # get runs for each session
+        runs = self.file_mapper.tasks_runs[task]
+
         # get sessions avaialble for task
         task_sessions = self.file_mapper.get_sessions_task(task)
         # if sessions are provided, ensure it's a list
@@ -118,53 +121,64 @@ class DatasetPan:
         # initialize dataset dictionary
         dataset = {
             'fmri': [],
-            'events': []
+            'events': [],
         }
         # load files for each session
         for session in sessions:
             if verbose:
                 print(f"  Loading session '{session}'...")
-            fmri_files = self.file_mapper.get_session_fmri_files(
-                session, task, desc='preprocfinal'
-            )
-            # if no fMRI file is found, raise error
-            if len(fmri_files) == 0:
-                # in some scenarios, fmri may be missing or artifacts, skip loading
-                if verbose:
-                    print(
-                        f"No fMRI file found for session '{session}' and task '{task}'."
-                    )
-                continue
-            elif len(fmri_files) > 1:
-                # raise error if multiple fMRI files are found
-                raise ValueError(
-                    f"Multiple fMRI files found for session '{session}' and task '{task}'."
+
+            # if runs is empty, create list with None to loop through at least once
+            if len(runs[session]) == 0:
+                runs_session = [None]
+            else:
+                runs_session = runs[session]
+            
+            # loop through runs for session
+            for run in runs_session:
+                if verbose and run is not None:
+                    print(f"    Loading run '{run}'...")
+                fmri_files = self.file_mapper.get_session_fmri_files(
+                    session, task, run=run, desc='preprocfinal'
                 )
-            # load fMRI file into 2D array or 4D image
-            fmri_data = self.load_fmri(
-                fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d, 
-                verbose=verbose
-            )
-            # append data to dataset
-            dataset['fmri'].append(fmri_data)
-            # load event files
-            if has_events:
-                onset_files = self.file_mapper.get_session_event_files(
-                    session, task
-                )
-                if len(onset_files) == 0:
-                    print(
-                        f"Warning: No event file found for session '{session}' "
-                        f"and task '{task}'."
-                    )
+                # if no fMRI file is found, raise error
+                if len(fmri_files) == 0:
+                    # in some scenarios, fmri may be missing or artifacts, skip loading
+                    if verbose:
+                        print(
+                            f"No fMRI file found for session '{session}' and task '{task}'."
+                        )
                     continue
-                # convert event file to dataframe
-                event_df = self.events_to_df(
-                    fp_onsets=onset_files, # type: ignore
-                    session=session,
-                    task = task
+                elif len(fmri_files) > 1:
+                    # raise error if multiple fMRI files are found
+                    raise ValueError(
+                        f"Multiple fMRI files found for session '{session}' and task '{task}'."
+                    )
+                # load fMRI file into 2D array or 4D image
+                fmri_data = self.load_fmri(
+                    fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d, 
+                    verbose=verbose
                 )
-                dataset['events'].append(event_df)
+                # append data to dataset
+                dataset['fmri'].append(fmri_data)
+                # load event files
+                if has_events:
+                    onset_files = self.file_mapper.get_session_event_files(
+                        session, task, run=run
+                    )
+                    if len(onset_files) == 0:
+                        print(
+                            f"Warning: No event file found for session '{session}' "
+                            f"and task '{task}'."
+                        )
+                        continue
+                    # convert event file to dataframe
+                    event_df = self.events_to_df(
+                        fp_onsets=onset_files, # type: ignore
+                        session=session,
+                        task = task
+                    )
+                    dataset['events'].append(event_df)
 
         # concatenate data across sessions if requested
         if concatenate:
@@ -212,7 +226,7 @@ class DatasetPan:
                 task=task,
                 condition=c
             )
-            duration = [PAN_CONDITIONS[task]['duration'][c]]
+            duration = PAN_CONDITIONS[task]['duration'][c]
 
             for onset in c_onsets:
                 event_timing.append((c, onset, duration))
@@ -281,5 +295,10 @@ def _extract_timings_pan(
     # load onset files for condition
     with open(fp_condition_onset[0], 'r') as f:
         c_onsets = [float(o) for o in f.read().strip().split(' ')]
+
+    # subtract dummy volume duration from onsets
+    c_onsets = [o - (DUMMY_VOLUMES * TR_PAN) for o in c_onsets]
+    # remove onsets that are negative after dummy volume removal
+    c_onsets = [o for o in c_onsets if o >= 0]
     return c_onsets
 
