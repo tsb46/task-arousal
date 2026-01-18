@@ -4,6 +4,8 @@ Distributed lag modeling of physio signals, events, and fMRI data
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Tuple
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -411,13 +413,15 @@ class DistributedLagEventModel:
             if not all(col in df.columns for col in EVENT_COLUMNS):
                 raise ValueError(f"Missing columns: {EVENT_COLUMNS} in dataframe {i}")
 
-        # get trial types from first event df
-        self.trial_types = event_dfs[0]['trial_type'].unique().tolist()
-        # check that all event dfs have same trial types
-        for i, df in enumerate(event_dfs):
-            unique_trials = df['trial_type'].unique().tolist()
-            if not all(trial in self.trial_types for trial in unique_trials):
-                raise ValueError(f"Event dataframe {i} has different trial types than the first dataframe")
+        # get trial types from all event dfs
+        self.trial_types = []
+        for i, event_df in enumerate(event_dfs):
+            unique_trials = event_df['trial_type'].unique().tolist()
+            for trial in unique_trials:
+                if trial not in self.trial_types:
+                    if i > 0:
+                        warnings.warn(f"Adding new trial type '{trial}' from dataframe {i} that was not in the first dataframe.")
+                    self.trial_types.append(trial)
         
         # create column names for event regressors
         self.event_reg_cols = [
@@ -543,16 +547,16 @@ class DistributedLagEventModel:
         return dlm_pred
 
 def _create_spline_event_reg(
-        event_dfs: List[pd.DataFrame],
-        outcome_data: List[np.ndarray], 
-        tr: float,
-        trial_types: List[str],
-        n_knots: int,
-        basis_type: str,
-        knots: List[int] | None,
-        regressor_extend: float = 10.0,
-        regressor_duration: float | None = None,
-    ) -> Tuple[List[np.ndarray], Dict[str, int], Dict[str, SplineLagBasis], Dict[str, float], Dict[str, float]]:
+    event_dfs: List[pd.DataFrame],
+    outcome_data: List[np.ndarray], 
+    tr: float,
+    trial_types: List[str],
+    n_knots: int,
+    basis_type: str,
+    knots: List[int] | None,
+    regressor_extend: float = 10.0,
+    regressor_duration: float | None = None,
+) -> Tuple[List[np.ndarray], Dict[str, int], Dict[str, SplineLagBasis], Dict[str, float], Dict[str, float]]:
     """
     Utility function to create spline regressors for the task onsets 
     of each trial across all sessions/runs.
@@ -564,17 +568,13 @@ def _create_spline_event_reg(
     # across all sessions/runs
     trial_durations_dict = {}
     trial_durations_extend_dict = {}
-    # get the trial types from the first run/session
-    trial_types = event_dfs[0]['trial_type'].unique().tolist()
+
     for trial in trial_types:
         max_duration = 0.0
         for event_df in event_dfs:
             trial_durations = event_df[event_df['trial_type'] == trial]['duration'].to_numpy()
             if len(trial_durations) > 0:
                 trial_max = np.max(trial_durations)
-                # if trial durations have the same duration value, it returns a list with one value
-                if isinstance(trial_max, list):
-                    trial_max = trial_max[0]
                 # update max duration if trial_max is greater
                 if trial_max > max_duration:
                     max_duration = trial_max
