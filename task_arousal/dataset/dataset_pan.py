@@ -1,7 +1,8 @@
 """
-Class for managing and loading preprocessed dataset files for 
+Class for managing and loading preprocessed dataset files for
 a given subject in the Precision Targeting of Association Networks (PAN) dataset.
 """
+
 import json
 
 from typing import List
@@ -19,11 +20,12 @@ from .dataset_utils import (
 )
 
 # Conditions for PAN tasks
-PAN_CONDITIONS = json.load(open('task_arousal/dataset/pan_conditions.json', 'r'))
+PAN_CONDITIONS = json.load(open("task_arousal/dataset/pan_conditions.json", "r"))
+
 
 class DatasetPan:
     """
-    Class for managing and loading preprocessed dataset files for a given subject in 
+    Class for managing and loading preprocessed dataset files for a given subject in
     the PAN dataset.
     """
 
@@ -38,7 +40,7 @@ class DatasetPan:
         """
         self.subject = subject
         # map file paths associated to subject
-        self.file_mapper = FileMapper(dataset = 'pan', subject=subject)
+        self.file_mapper = FileMapper(dataset="pan", subject=subject)
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
         # get available sessions from mapper
@@ -53,9 +55,10 @@ class DatasetPan:
         concatenate: bool = False,
         normalize: bool = True,
         convert_to_2d: bool = True,
+        bandpass: tuple[float, float] | None = None,
         load_func: bool = True,
         load_physio: bool = False,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> DatasetLoad:
         """
         Load the preprocessed dataset files for the subject.
@@ -67,17 +70,20 @@ class DatasetPan:
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
-            Whether to concatenate data across sessions. 
-            If convert_to_2d is False, this will be ignored. Note, that 
-            event data will not be concatenated to preserve trial timing 
+            Whether to concatenate data across sessions.
+            If convert_to_2d is False, this will be ignored. Note, that
+            event data will not be concatenated to preserve trial timing
             across runs. Default is False.
         normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension. 
+            Whether to normalize (z-score) the data along the time dimension.
             If convert_to_2d is False, this will be ignored. Default is True.
         convert_to_2d : bool, optional
             Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
+        bandpass : tuple of float | None, optional
+            If provided, apply a Butterworth bandpass filter with these (low, high) frequencies in Hz.
+            TR is assumed to be 1.355s for PAN dataset. Default is None.
         load_func : bool, optional
-            Whether to load fMRI data. Since this dataset only contains fMRI data, 
+            Whether to load fMRI data. Since this dataset only contains fMRI data,
             this parameter is kept for API consistency. Parameter is ignored. Default is True.
         load_physio : bool, optional
             No physiological data. Kept for API consistency. Parameter is ignored. Default is False.
@@ -94,9 +100,20 @@ class DatasetPan:
             conditions = PAN_CONDITIONS[task]
             has_events = True
         except KeyError:
-            print(f"Warning: No conditions found for task '{task}'. Events will not be loaded.")
+            print(
+                f"Warning: No conditions found for task '{task}'. Events will not be loaded."
+            )
             conditions = []
             has_events = False
+
+        # print processing info - normalize, bandpass
+        if verbose:
+            if normalize and convert_to_2d:
+                print("fMRI data will be z-scored per voxel.")
+            if bandpass is not None:
+                print(
+                    f"fMRI data will be bandpass filtered between {bandpass[0]} Hz and {bandpass[1]} Hz."
+                )
 
         # get runs for each session
         runs = self.file_mapper.tasks_runs[task]
@@ -117,11 +134,13 @@ class DatasetPan:
             sessions = task_sessions
 
         if verbose:
-            print(f"Loading data for subject '{self.subject}', task '{task}', sessions: {sessions}")
+            print(
+                f"Loading data for subject '{self.subject}', task '{task}', sessions: {sessions}"
+            )
         # initialize dataset dictionary
         dataset = {
-            'fmri': [],
-            'events': [],
+            "fmri": [],
+            "events": [],
         }
         # load files for each session
         for session in sessions:
@@ -133,13 +152,13 @@ class DatasetPan:
                 runs_session = [None]
             else:
                 runs_session = runs[session]
-            
+
             # loop through runs for session
             for run in runs_session:
                 if verbose and run is not None:
                     print(f"    Loading run '{run}'...")
                 fmri_files = self.file_mapper.get_session_fmri_files(
-                    session, task, run=run, desc='preprocfinal'
+                    session, task, run=run, desc="preprocfinal"
                 )
                 # if no fMRI file is found, raise error
                 if len(fmri_files) == 0:
@@ -156,11 +175,14 @@ class DatasetPan:
                     )
                 # load fMRI file into 2D array or 4D image
                 fmri_data = self.load_fmri(
-                    fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d, 
-                    verbose=verbose
+                    fmri_files[0],
+                    normalize=normalize,
+                    bandpass=bandpass,
+                    convert_to_2d=convert_to_2d,
+                    verbose=verbose,
                 )
                 # append data to dataset
-                dataset['fmri'].append(fmri_data)
+                dataset["fmri"].append(fmri_data)
                 # load event files
                 if has_events:
                     onset_files = self.file_mapper.get_session_event_files(
@@ -174,22 +196,24 @@ class DatasetPan:
                         continue
                     # convert event file to dataframe
                     event_df = self.events_to_df(
-                        fp_onsets=onset_files, # type: ignore
+                        fp_onsets=onset_files,  # type: ignore
                         session=session,
-                        task = task
+                        task=task,
                     )
-                    dataset['events'].append(event_df)
+                    dataset["events"].append(event_df)
 
         # concatenate data across sessions if requested
         if concatenate:
             if verbose:
                 print("Concatenating data across sessions...")
-            
+
             # do not concatenate fmri data if not converted to 2d
             if convert_to_2d:
-                dataset['fmri'] = [np.concatenate(dataset['fmri'], axis=0)]
+                dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
             else:
-                print("Warning: fmri data not concatenated because convert_to_2d is False.")
+                print(
+                    "Warning: fmri data not concatenated because convert_to_2d is False."
+                )
             # events are not concatenated to preserve trial timing across runs
 
         if verbose:
@@ -197,7 +221,7 @@ class DatasetPan:
         return DatasetLoad(**dataset)
 
     def events_to_df(
-        self, 
+        self,
         fp_onsets: List[str],
         task: str,
         session: str,
@@ -220,51 +244,49 @@ class DatasetPan:
         """
         # loop through conditions of task to build event dataframe
         event_timing = []
-        for c in PAN_CONDITIONS[task]['conditions']:
-            c_onsets = _extract_timings_pan(
-                fp_onsets=fp_onsets,
-                task=task,
-                condition=c
-            )
-            duration = PAN_CONDITIONS[task]['duration'][c]
+        for c in PAN_CONDITIONS[task]["conditions"]:
+            c_onsets = _extract_timings_pan(fp_onsets=fp_onsets, task=task, condition=c)
+            duration = PAN_CONDITIONS[task]["duration"][c]
 
             for onset in c_onsets:
                 event_timing.append((c, onset, duration))
-        
-        event_df = pd.DataFrame(event_timing, columns=['trial_type', 'onset', 'duration'])
-        event_df = event_df.sort_values(by='onset')
+
+        event_df = pd.DataFrame(
+            event_timing, columns=["trial_type", "onset", "duration"]
+        )
+        event_df = event_df.sort_values(by="onset")
         # insert session column
-        event_df.insert(0, 'session', session)
+        event_df.insert(0, "session", session)
         return event_df
 
     def load_fmri(
         self,
         fp: str,
         normalize: bool = False,
+        bandpass: tuple[float, float] | None = None,
         convert_to_2d: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> np.ndarray:
         """
         Load the preprocessed fMRI data from a NIfTI file, delegating to shared utils.
         Returns time x voxels if convert_to_2d else a 4D NIfTI image.
         """
         return _load_fmri(
-            fp, 
-            self.mask, # type: ignore
-            normalize=normalize, 
+            fp,
+            self.mask,  # type: ignore
+            normalize=normalize,
+            bandpass=bandpass,
+            tr=TR_PAN,
             convert_to_2d=convert_to_2d,
-            verbose=verbose
-        ) # type: ignore
+            verbose=verbose,
+        )
 
-    def to_4d(
-        self,
-        fmri_data: np.ndarray
-    ) -> nib.nifti1.Nifti1Image:
+    def to_4d(self, fmri_data: np.ndarray) -> nib.nifti1.Nifti1Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        return _to_4d(fmri_data, self.mask) # type: ignore
-    
+        return _to_4d(fmri_data, self.mask)  # type: ignore
+
 
 def _extract_timings_pan(
     fp_onsets: List[str],
@@ -287,18 +309,21 @@ def _extract_timings_pan(
         A list of onset timings for the specified condition.
     """
     # find onset files for condition
-    fp_condition_onset = [fp for fp in fp_onsets if f'{condition}.1D' in fp]
+    fp_condition_onset = [fp for fp in fp_onsets if f"{condition}.1D" in fp]
     if len(fp_condition_onset) == 0:
-            raise ValueError(f"No onset files found for condition: {condition} in {task} task")
+        raise ValueError(
+            f"No onset files found for condition: {condition} in {task} task"
+        )
     elif len(fp_condition_onset) > 1:
-        raise ValueError(f"Multiple onset files found for condition: {condition} in {task} task")
+        raise ValueError(
+            f"Multiple onset files found for condition: {condition} in {task} task"
+        )
     # load onset files for condition
-    with open(fp_condition_onset[0], 'r') as f:
-        c_onsets = [float(o) for o in f.read().strip().split(' ')]
+    with open(fp_condition_onset[0], "r") as f:
+        c_onsets = [float(o) for o in f.read().strip().split(" ")]
 
     # subtract dummy volume duration from onsets
     c_onsets = [o - (DUMMY_VOLUMES * TR_PAN) for o in c_onsets]
     # remove onsets that are negative after dummy volume removal
     c_onsets = [o for o in c_onsets if o >= 0]
     return c_onsets
-

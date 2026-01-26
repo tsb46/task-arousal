@@ -1,6 +1,7 @@
 """
 Distributed lag modeling of physio signals, events, and fMRI data
 """
+
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Tuple
 
@@ -9,7 +10,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from patsy import dmatrix # type: ignore
+from patsy import dmatrix  # type: ignore
 from scipy.interpolate import interp1d
 from scipy.stats import zscore
 from sklearn.linear_model import Ridge
@@ -18,10 +19,11 @@ from task_arousal.constants import SLICE_TIMING_REF, EVENT_COLUMNS
 from task_arousal.analysis.utils import lag_mat, boxcar
 
 # define the resampling of the event time course for boxcar function (in seconds)
-RESAMPLE_TR = 0.01 # seconds
+RESAMPLE_TR = 0.01  # seconds
 
 # define the the distance (in seconds) between samples of the predicted functional time course after event offset
-PREDICT_T_DELTA = 1 # seconds
+PREDICT_T_DELTA = 1  # seconds
+
 
 # dataclass for storing DLM prediction results
 @dataclass
@@ -34,13 +36,13 @@ class DLMParams:
     pred_lags_sec: np.ndarray
     basis_type: str
 
+
 @dataclass
 class DLMPredResults:
     tr: float
     pred_outcome: np.ndarray
     dlm_params: DLMParams
     trial: str | None = None
-
 
 
 class SplineLagBasis:
@@ -60,25 +62,43 @@ class SplineLagBasis:
         the temporal resolution of the basis, such that more knots results
         in the ability to capture more complex curves (at the expense of
         potential overfitting) (default: 5)
+    tr: float | None
+        repetition time of the fMRI data (in seconds). Required for calculating
+        knots_per_sec if that parameter is set. Otherwise can be None. (default: None)
+    knots_per_sec: float
+        number of knots per second in the spline basis across temporal lags. This ensures
+        that varying duration trials have similar temporal smoothness in the basis. For example,
+        a value of 0.5 results in one knot every 2 seconds. Default is 0.5 knots per second.
+    n_knots: int | None
+        fix the number of knots in the spline basis across temporal lags. If this parameter is set,
+        the knots_per_sec parameter is ignored. Default is None.
     knots: List[int]
         Locations of knots in spline basis across temporal lags. If provided,
-        the n_knots parameter is ignored.
+        the knots_per_sec and n_knots parameters are ignored.
     basis_type: Literal['ns','bs']
         basis type for the spline basis. 'ns' for natural spline, 'bs' for B-spline.
 
     """
+
     def __init__(
-        self, 
-        n_knots: int = 5,
+        self,
+        knots_per_sec: float = 0.5,
+        tr: float | None = None,
+        n_knots: int | None = None,
         knots: List[int] | None = None,
-        basis_type: Literal['cr','bs'] = 'bs'
+        basis_type: Literal["cr", "bs"] = "bs",
     ):
         # specify knots parameters
+        if (knots is None) & (n_knots is None):
+            if tr is None and knots_per_sec is not None:
+                raise ValueError("tr must be specified if knots_per_sec is set")
+        self.knots_per_sec = knots_per_sec
+        self.tr = tr
         self.n_knots = n_knots
         self.knots = knots
         self.basis_type = basis_type
 
-    def create(self, nlags: int, neg_nlags: int = 0) -> 'SplineLagBasis':
+    def create(self, nlags: int, neg_nlags: int = 0) -> "SplineLagBasis":
         """
         create spline basis over lags of physio signal
 
@@ -94,27 +114,30 @@ class SplineLagBasis:
         # create spline basis from sklearn SplineTransformer
         if neg_nlags > 0:
             raise ValueError("neg_nlags must be a negative integer")
-        
+
         # specify array of lags
-        self.lags = np.arange(neg_nlags, nlags+1)
+        self.lags = np.arange(neg_nlags, nlags + 1)
         if self.knots is not None:
             self.basis = dmatrix(
-                f'{self.basis_type}(x, knots=self.knots) - 1',
-                {'x': self.lags}
+                f"{self.basis_type}(x, knots=self.knots) - 1", {"x": self.lags}
             )
         else:
+            if self.n_knots is None:
+                # calculate number of knots based on knots_per_sec
+                if self.tr is None:
+                    raise ValueError("tr must be specified if n_knots is None")
+                duration_sec = (nlags - neg_nlags) * self.tr
+                self._n_knots = max(3, int(np.ceil(duration_sec * self.knots_per_sec)))
+            else:
+                self._n_knots = self.n_knots
+
             self.basis = dmatrix(
-                f'{self.basis_type}(x, df=self.n_knots) - 1',
-                {'x': self.lags}
+                f"{self.basis_type}(x, df=self._n_knots) - 1", {"x": self.lags}
             )
-    
+
         return self
 
-    def project(
-        self, 
-        X: np.ndarray, 
-        fill_val: float = np.nan
-    ) -> np.ndarray:
+    def project(self, X: np.ndarray, fill_val: float = np.nan) -> np.ndarray:
         """
         project lags of physio signal onto spline basis
 
@@ -137,12 +160,9 @@ class SplineLagBasis:
         # get number of splines
         n_splines = self.basis.shape[1]
         # allocate memory
-        lag_proj = np.empty(
-            (lagmat.shape[0], n_splines),
-            dtype=lagmat.dtype
-        )
+        lag_proj = np.empty((lagmat.shape[0], n_splines), dtype=lagmat.dtype)
         for spline_n in np.arange(n_splines):
-            lag_proj[:,spline_n] = np.dot(lagmat, self.basis[:,spline_n])
+            lag_proj[:, spline_n] = np.dot(lagmat, self.basis[:, spline_n])
 
         return lag_proj
 
@@ -164,14 +184,17 @@ class DistributedLagPhysioModel:
         number of lags (shifts) of the physio signal in the negative direction.
         Must be a negative integer. This allows modeling the association between
         functional and physio signals where the functional leads the physio signal.
-    n_knots: int
-        number of knots in the spline basis across temporal lags. Controls
-        the temporal resolution of the basis, such that more knots results
-        in the ability to capture more complex curves (at the expense of
-        potential overfitting) (default: 5)
-    knots: List[int]
+    knots_per_sec: float
+        number of knots per second in the spline basis across temporal lags. This ensures
+        that varying duration trials have similar temporal smoothness in the basis. For example,
+        a value of 0.5 results in one knot every 2 seconds. Default is 0.3 knots per second.
+    n_knots: int | None
+        fix the number of knots in the spline basis across temporal lags. If this parameter is set,
+        the knots_per_sec parameter is ignored. Default is None.
+    knots: List[int] | None
         knot locations for the spline basis across temporal lags. If supplied, this
-        overrides the n_knots parameter.
+        overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
+        n_knots parameter are ignored.
     basis: Literal['cr','bs']
         basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
 
@@ -183,14 +206,16 @@ class DistributedLagPhysioModel:
     predict()
 
     """
+
     def __init__(
         self,
         tr: float,
         nlags: int,
         neg_nlags: int = 0,
-        n_knots: int = 5,
+        knots_per_sec: float = 0.3,
+        n_knots: int | None = None,
         knots: List[int] | None = None,
-        basis: Literal['cr','bs'] = 'cr'
+        basis: Literal["cr", "bs"] = "cr",
     ):
         # specify array of lags
         self.tr = tr
@@ -198,6 +223,7 @@ class DistributedLagPhysioModel:
         if neg_nlags > 0:
             raise ValueError("neg_nlags must be a negative integer")
         self.neg_nlags = neg_nlags
+        self.knots_per_sec = knots_per_sec
         self.n_knots = n_knots
         self.knots = knots
         self.basis_type = basis
@@ -216,7 +242,7 @@ class DistributedLagPhysioModel:
             functional MRI time courses represented in an ndarray with time
             points along the rows and vertices in the columns (# of time
             points, # of vertices).
-        
+
         Returns
         -------
         self: object
@@ -230,8 +256,11 @@ class DistributedLagPhysioModel:
             raise ValueError("X must have a single column")
         # create B-spline basis across lags of physio signal
         self.basis = SplineLagBasis(
-            n_knots=self.n_knots, knots=self.knots, 
-            basis_type=self.basis_type # type: ignore
+            knots_per_sec=self.knots_per_sec,
+            tr=self.tr,
+            n_knots=self.n_knots,
+            knots=self.knots,
+            basis_type=self.basis_type,  # type: ignore
         )
         self.basis.create(self.nlags, self.neg_nlags)
         # project physio signal lags on B-spline basis
@@ -240,11 +269,11 @@ class DistributedLagPhysioModel:
         self.nan_mask = np.isnan(x_basis).any(axis=1)
 
         # fit Linear regression model
-        self.glm = Ridge(fit_intercept=False, alpha=1.0)
+        self.glm = Ridge(fit_intercept=False, alpha=10000)
         self.glm.fit(
             # normalize X basis
             np.array(zscore(x_basis[~self.nan_mask])),
-            Y[~self.nan_mask]
+            Y[~self.nan_mask],
         )
         return self
 
@@ -312,30 +341,29 @@ class DistributedLagPhysioModel:
         pred_lags_step = pred_lags_sec / self.tr
         # project lag vector (in steps) onto B-spline basis
         pred_basis = dmatrix(
-            self.basis.basis.design_info,
-            {'x': pred_lags_step.reshape(-1, 1)}
+            self.basis.basis.design_info, {"x": pred_lags_step.reshape(-1, 1)}
         )
         # project prediction value on lag B-spline basis
         physio_pred = [
             pred_val * pred_basis[:, spline_n]
             for spline_n in range(pred_basis.shape[1])
-         ]
+        ]
         physio_pred = np.vstack(physio_pred).T
         # Get predictions from model
         pred_func = self.glm.predict(physio_pred)
         # package output in container object
         dlm_pred = DLMPredResults(
-            tr = self.tr,
-            pred_outcome = pred_func,
-            dlm_params = DLMParams(
-                lag_max = lag_max_sec,
-                lag_min = lag_min_sec,
-                n_eval = None if n_eval is None else int(n_eval),
-                pred_val = pred_val,
-                pred_lags_step = pred_lags_step,
-                pred_lags_sec = pred_lags_sec,
-                basis_type = self.basis_type,
-            )   
+            tr=self.tr,
+            pred_outcome=pred_func,
+            dlm_params=DLMParams(
+                lag_max=lag_max_sec,
+                lag_min=lag_min_sec,
+                n_eval=None if n_eval is None else int(n_eval),
+                pred_val=pred_val,
+                pred_lags_step=pred_lags_step,
+                pred_lags_sec=pred_lags_sec,
+                basis_type=self.basis_type,
+            ),
         )
         return dlm_pred
 
@@ -354,33 +382,39 @@ class DistributedLagEventModel:
     regressor_extend: float
         how much time (in seconds) after the end of the event to extend the regressor. If None, the regressor
         will only cover the duration of the event. Defaults is 10 seconds. If regressor_duration is set, this parameter is ignored.
-    n_knots: int
-        number of knots in the spline basis across temporal lags. Controls
-        the temporal resolution of the basis, such that more knots results
-        in the ability to capture more complex curves (at the expense of
-        potential overfitting) (default: 5)
-    knots: List[int]
+    knots_per_sec: float
+        number of knots per second in the spline basis across temporal lags. This ensures
+        that varying duration trials have similar temporal smoothness in the basis. For example,
+        a value of 0.5 results in one knot every 2 seconds. Default is 0.5 knots per second.
+    n_knots: int | None
+        fix the number of knots in the spline basis across temporal lags. If this parameter is set,
+        the knots_per_sec parameter is ignored. Default is None.
+    knots: List[int] | None
         knot locations for the spline basis across temporal lags. If supplied, this
-        overrides the n_knots parameter.
+        overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
+        n_knots parameter are ignored.
     basis: Literal['cr','bs']
         basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
     regressor_duration: float | None
         fix the duration of all spline regressors - i.e. the duration after onset of the event.
         If set to None, the regressor duration will be set to the event duration from the event data.
-        Note, that if regressor_duration is None, the number of lags (nlags) will vary across events. 
+        Note, that if regressor_duration is None, the number of lags (nlags) will vary across events.
 
     """
+
     def __init__(
         self,
         tr: float,
         regressor_extend: float = 10.0,
-        n_knots: int = 5,
+        knots_per_sec: float = 0.3,
+        n_knots: int | None = None,
         knots: List[int] | None = None,
-        basis: Literal['cr','bs'] = 'cr',
+        basis: Literal["cr", "bs"] = "cr",
         regressor_duration: float | None = None,
     ):
         self.tr = tr
         self.regressor_extend = regressor_extend
+        self.knots_per_sec = knots_per_sec
         self.n_knots = n_knots
         self.knots = knots
         self.basis_type = basis
@@ -416,32 +450,41 @@ class DistributedLagEventModel:
         # get trial types from all event dfs
         self.trial_types = []
         for i, event_df in enumerate(event_dfs):
-            unique_trials = event_df['trial_type'].unique().tolist()
+            unique_trials = event_df["trial_type"].unique().tolist()
             for trial in unique_trials:
                 if trial not in self.trial_types:
                     if i > 0:
-                        warnings.warn(f"Adding new trial type '{trial}' from dataframe {i} that was not in the first dataframe.")
+                        warnings.warn(
+                            f"Adding new trial type '{trial}' from dataframe {i} that was not in the first dataframe."
+                        )
                     self.trial_types.append(trial)
-        
-        # create column names for event regressors
-        self.event_reg_cols = [
-            f"{trial}_lag_spline{n+1}"
-            for trial in self.trial_types
-            for n in range(self.n_knots)
-        ]
 
         # create event regressors for each session/run
-        self.event_regs, self.nlags, self.basis, self.trial_durations, self.trial_durations_extend = _create_spline_event_reg(
-            event_dfs=event_dfs, 
+        (
+            self.event_regs,
+            self.nlags,
+            self.basis,
+            self.trial_durations,
+            self.trial_durations_extend,
+        ) = _create_spline_event_reg(
+            event_dfs=event_dfs,
             outcome_data=outcome_data,
-            trial_types=self.trial_types, 
-            tr=self.tr, 
-            n_knots=self.n_knots, 
-            knots=self.knots, 
-            basis_type=self.basis_type, 
+            trial_types=self.trial_types,
+            tr=self.tr,
+            knots_per_sec=self.knots_per_sec,
+            n_knots=self.n_knots,
+            knots=self.knots,
+            basis_type=self.basis_type,
             regressor_duration=self.regressor_duration,
-            regressor_extend=self.regressor_extend
+            regressor_extend=self.regressor_extend,
         )
+
+        # create column names for event regressors
+        self.event_reg_cols = [
+            f"{trial}_lag_spline{n + 1}"
+            for trial in self.trial_types
+            for n in range(self.basis[trial]._n_knots)
+        ]
 
         # concatenate outcome data across sessions/runs
         outcome_concat = np.vstack(outcome_data)
@@ -451,10 +494,7 @@ class DistributedLagEventModel:
         event_regs_concat = np.array(zscore(event_regs_concat, axis=0))
         # fit Ridge regression model
         self.glm = Ridge(fit_intercept=False, alpha=1.0)
-        self.glm.fit(
-            X=event_regs_concat,
-            y=outcome_concat
-        )
+        self.glm.fit(X=event_regs_concat, y=outcome_concat)
         return self
 
     def evaluate(
@@ -473,14 +513,14 @@ class DistributedLagEventModel:
             The trial type to evaluate the model for. Must be one of the
             trial types used in the model fitting.
         eval_delta: float
-            The time (in seconds) between samples to predict functional time. Ignored 
+            The time (in seconds) between samples to predict functional time. Ignored
             if n_eval is specified. (default: PREDICT_T_DELTA).
         pred_val: float
             The predicted event value used to predict functional time
             courses in z-score units (default: 1.0).
         n_eval: int | None
-            Fix the number of samples to predict between the event onset and max_duration for 
-            the predicted functional time course or physio signal. If specified, 
+            Fix the number of samples to predict between the event onset and max_duration for
+            the predicted functional time course or physio signal. If specified,
             eval_delta is ignored. If None, eval_delta is used to determine the number of samples.
 
         Returns
@@ -506,59 +546,68 @@ class DistributedLagEventModel:
             pred_times_sec = np.linspace(0.0, max_duration_sec, n_eval)
 
         # Convert seconds to the basis' lag-step units (built at RESAMPLE_TR)
-        # Basis was created on integer lag indices measured at RESAMPLE_TR; 
+        # Basis was created on integer lag indices measured at RESAMPLE_TR;
         # evaluating at arbitrary times requires mapping t_sec -> t_steps.
         pred_lags_steps = pred_times_sec / RESAMPLE_TR
 
         # Project lag positions onto the fitted spline design (same columns as training)
         pred_basis = dmatrix(
-            self.basis[trial].basis.design_info,
-            {'x': pred_lags_steps.reshape(-1, 1)}
+            self.basis[trial].basis.design_info, {"x": pred_lags_steps.reshape(-1, 1)}
         )
         # project prediction value on lag B-spline basis
         event_pred = [
             pred_val * pred_basis[:, spline_n]
             for spline_n in range(pred_basis.shape[1])
-         ]
+        ]
         event_pred = np.vstack(event_pred).T
         # create full event regressor with zeros for other trial types
         n_total_regs = len(self.event_reg_cols)
         n_trial_regs = self.basis[trial].basis.shape[1]
         trial_start_idx = self.event_reg_cols.index(f"{trial}_lag_spline1")
         event_pred_full = np.zeros((event_pred.shape[0], n_total_regs))
-        event_pred_full[:, trial_start_idx:trial_start_idx+n_trial_regs] = event_pred
+        event_pred_full[:, trial_start_idx : trial_start_idx + n_trial_regs] = (
+            event_pred
+        )
         # Get predictions from model
         pred_func = self.glm.predict(event_pred_full)
         # package output in container object
         dlm_pred = DLMPredResults(
-            tr = self.tr,
-            pred_outcome = pred_func,
-            trial = trial,
-            dlm_params = DLMParams(
-                lag_max = max_duration_sec,
-                lag_min = 0.0,
-                n_eval = None if n_eval is None else int(n_eval),
-                pred_val = pred_val,
-                pred_lags_step = pred_lags_steps,
-                pred_lags_sec = pred_times_sec,
-                basis_type = self.basis_type,
-            )
+            tr=self.tr,
+            pred_outcome=pred_func,
+            trial=trial,
+            dlm_params=DLMParams(
+                lag_max=max_duration_sec,
+                lag_min=0.0,
+                n_eval=None if n_eval is None else int(n_eval),
+                pred_val=pred_val,
+                pred_lags_step=pred_lags_steps,
+                pred_lags_sec=pred_times_sec,
+                basis_type=self.basis_type,
+            ),
         )
         return dlm_pred
 
+
 def _create_spline_event_reg(
     event_dfs: List[pd.DataFrame],
-    outcome_data: List[np.ndarray], 
+    outcome_data: List[np.ndarray],
     tr: float,
     trial_types: List[str],
-    n_knots: int,
+    knots_per_sec: float,
+    n_knots: int | None,
     basis_type: str,
     knots: List[int] | None,
-    regressor_extend: float = 10.0,
+    regressor_extend: float = 15.0,
     regressor_duration: float | None = None,
-) -> Tuple[List[np.ndarray], Dict[str, int], Dict[str, SplineLagBasis], Dict[str, float], Dict[str, float]]:
+) -> Tuple[
+    List[np.ndarray],
+    Dict[str, int],
+    Dict[str, SplineLagBasis],
+    Dict[str, float],
+    Dict[str, float],
+]:
     """
-    Utility function to create spline regressors for the task onsets 
+    Utility function to create spline regressors for the task onsets
     of each trial across all sessions/runs.
     """
     # initialize basis metadata to be filled with trial-specific values
@@ -572,7 +621,9 @@ def _create_spline_event_reg(
     for trial in trial_types:
         max_duration = 0.0
         for event_df in event_dfs:
-            trial_durations = event_df[event_df['trial_type'] == trial]['duration'].to_numpy()
+            trial_durations = event_df[event_df["trial_type"] == trial][
+                "duration"
+            ].to_numpy()
             if len(trial_durations) > 0:
                 trial_max = np.max(trial_durations)
                 # update max duration if trial_max is greater
@@ -588,9 +639,11 @@ def _create_spline_event_reg(
         nlags[trial] = int(np.ceil(trial_durations_extend_dict[trial] / RESAMPLE_TR))
         # create spline basis
         basis[trial] = SplineLagBasis(
+            knots_per_sec=knots_per_sec,
+            tr=RESAMPLE_TR,
             n_knots=n_knots,
             knots=knots,
-            basis_type=basis_type # type: ignore
+            basis_type=basis_type,  # type: ignore
         )
 
         basis[trial].create(nlags[trial], neg_nlags=0)
@@ -607,7 +660,7 @@ def _create_spline_event_reg(
             n_vols=n_vols,
             slicetime_ref=SLICE_TIMING_REF,
             trial_types=trial_types,
-            impulse_dur=0.5
+            impulse_dur=0.5,
         )
         # project each trial event regressor onto spline basis
         events_regs_trial = []
@@ -616,17 +669,12 @@ def _create_spline_event_reg(
             # fill in NaNs with 0 to keep same length
             event_reg_proj = basis[trial].project(event_reg[t], fill_val=0.0)
             # downsample (interpolate) event regressor to match fmri times
-            interp_func = interp1d(
-                h_frametimes,
-                event_reg_proj.T,
-                kind='cubic'
-            )
-            event_reg_proj = interp_func(frametimes).T                
+            interp_func = interp1d(h_frametimes, event_reg_proj.T, kind="cubic")
+            event_reg_proj = interp_func(frametimes).T
             # trim fmri_img and event_reg to same length
             events_regs_trial.append(event_reg_proj)
         # create design matrix by concatenating trial event regressors
         event_regs_trial = np.hstack(events_regs_trial)
         event_regs.append(event_regs_trial)
 
-    return event_regs, nlags, basis, trial_durations_dict, trial_durations_extend_dict  
-
+    return event_regs, nlags, basis, trial_durations_dict, trial_durations_extend_dict
