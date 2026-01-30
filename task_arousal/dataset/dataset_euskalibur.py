@@ -1,7 +1,8 @@
 """
-Class for managing and loading preprocessed dataset files for 
+Class for managing and loading preprocessed dataset files for
 a given subject in the Euskalibur dataset.
 """
+
 from typing import List
 
 import pandas as pd
@@ -19,40 +20,40 @@ from .dataset_utils import (
 
 # conditions for pinel task in Euskalibur dataset
 PINEL_CONDITIONS = [
-    'acalc',
-    'amot_left',
-    'amot_right',
-    'asent',
-    'chbh',
-    'chbv',
-    'vcalc',
-    'vmot_left',
-    'vmot_right',
-    'vsent'
+    "acalc",
+    "amot_left",
+    "amot_right",
+    "asent",
+    "chbh",
+    "chbv",
+    "vcalc",
+    "vmot_left",
+    "vmot_right",
+    "vsent",
 ]
 
 # conditions for simon task in Euskalibur dataset
 SIMON_CONDITIONS = [
-    'left_congruent',
-    'right_congruent',
-    'left_incongruent',
-    'right_incongruent'
+    "left_congruent",
+    "right_congruent",
+    "left_incongruent",
+    "right_incongruent",
 ]
 
 # conditions for motor task in Euskalibur dataset
 MOTOR_CONDITIONS = [
-    'toe_left',
-    'toe_right',
-    'finger_left',
-    'finger_right',
-    'tongue',
-    'star'
+    "toe_left",
+    "toe_right",
+    "finger_left",
+    "finger_right",
+    "tongue",
+    "star",
 ]
 
 
 class DatasetEuskalibur:
     """
-    Class for managing and loading preprocessed dataset files for a given subject in 
+    Class for managing and loading preprocessed dataset files for a given subject in
     the Euskalibur dataset.
     """
 
@@ -67,7 +68,7 @@ class DatasetEuskalibur:
         """
         self.subject = subject
         # map file paths associated to subject
-        self.file_mapper = FileMapper(dataset = 'euskalibur', subject=subject)
+        self.file_mapper = FileMapper(dataset="euskalibur", subject=subject)
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
         # get available sessions from mapper
@@ -84,7 +85,7 @@ class DatasetEuskalibur:
         convert_to_2d: bool = True,
         load_func: bool = True,
         load_physio: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> DatasetLoad:
         """
         Load the preprocessed dataset files for the subject.
@@ -96,12 +97,12 @@ class DatasetEuskalibur:
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
-            Whether to concatenate data across sessions. 
-            If convert_to_2d is False, this will be ignored. Note, that 
-            event data will not be concatenated to preserve trial timing 
+            Whether to concatenate data across sessions.
+            If convert_to_2d is False, this will be ignored. Note, that
+            event data will not be concatenated to preserve trial timing
             across runs. Default is False.
         normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension. 
+            Whether to normalize (z-score) the data along the time dimension.
             If convert_to_2d is False, this will be ignored. Default is True.
         convert_to_2d : bool, optional
             Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
@@ -118,23 +119,23 @@ class DatasetEuskalibur:
                 f"Task '{task}' is not available for subject '{self.subject}'."
             )
         # select conditions and runs based on task
-        if task == 'pinel':
+        if task == "pinel":
             conditions = PINEL_CONDITIONS
             has_events = True
             runs = self.file_mapper.tasks_runs[task]
-        elif task == 'simon':
+        elif task == "simon":
             conditions = SIMON_CONDITIONS
             has_events = True
             runs = self.file_mapper.tasks_runs[task]
-        elif task == 'motor':
+        elif task == "motor":
             conditions = MOTOR_CONDITIONS
             has_events = True
             runs = self.file_mapper.tasks_runs[task]
-        elif task in 'breathhold':
+        elif task in "breathhold":
             conditions = []
             has_events = False
             runs = self.file_mapper.tasks_runs[task]
-        elif task == 'rest':
+        elif task == "rest":
             conditions = []
             has_events = False
             runs = self.file_mapper.tasks_runs[task]
@@ -154,18 +155,16 @@ class DatasetEuskalibur:
             sessions = self.sessions
 
         if verbose:
-            print(f"Loading data for subject '{self.subject}', task '{task}', sessions: {sessions}")
+            print(
+                f"Loading data for subject '{self.subject}', task '{task}', sessions: {sessions}"
+            )
         # initialize dataset dictionary
-        dataset = {
-            'fmri': [],
-            'physio': [],
-            'events': []
-        }
+        dataset = {"fmri": [], "physio": [], "events": []}
         # load files for each session
         for session in sessions:
             if verbose:
                 print(f"  Loading session '{session}'...")
-            
+
             # if runs is empty, create list with None to loop through at least once
             if len(runs[session]) == 0:
                 runs_session = [None]
@@ -184,7 +183,7 @@ class DatasetEuskalibur:
                 else:
                     # load physio file
                     physio_files = self.file_mapper.get_session_physio_files(
-                        session, task, run=run, desc='preproc'
+                        session, task, run=run, desc="preproc"
                     )
                     # check if exactly one physio file is found
                     if len(physio_files) == 0:
@@ -202,14 +201,16 @@ class DatasetEuskalibur:
                         )
                     # load physio file into dataframe
                     physio_df = self.load_physio(physio_files[0], normalize=normalize)
-            
+
                 # load fMRI file
                 if not load_func:
                     if verbose:
                         print("Skipping fMRI data loading...")
                     fmri_data = np.array([])
                 else:
-                    fmri_files = self.file_mapper.get_session_fmri_files(session, task, run=run, desc='preprocfinal')
+                    fmri_files = self.file_mapper.get_session_fmri_files(
+                        session, task, run=run, desc="preprocfinal"
+                    )
                     # if no fMRI file is found, raise error
                     if len(fmri_files) == 0:
                         # in some scenarios, fmri may be missing or artifacts, skip loading
@@ -226,34 +227,45 @@ class DatasetEuskalibur:
                             f"run '{run if run is not None else ''}'."
                         )
                     # load fMRI file into 2D array or 4D image
-                    fmri_data = self.load_fmri(fmri_files[0], normalize=normalize, convert_to_2d=convert_to_2d, verbose=verbose)
-                    
+                    fmri_data = self.load_fmri(
+                        fmri_files[0],
+                        normalize=normalize,
+                        convert_to_2d=convert_to_2d,
+                        verbose=verbose,
+                    )
+
                 # append data to dataset
-                dataset['physio'].append(physio_df)
-                dataset['fmri'].append(fmri_data)
+                dataset["physio"].append(physio_df)
+                dataset["fmri"].append(fmri_data)
                 # load event files
                 if has_events:
-                    event_files = self.file_mapper.get_session_event_files(session, task)
+                    event_files = self.file_mapper.get_session_event_files(
+                        session, task
+                    )
                     event_df = self.events_to_df(
                         fps_onset=[ef[0] for ef in event_files],
                         fps_duration=[ef[1] for ef in event_files],
                         conditions=conditions,
                         task=task,
-                        session=session
+                        session=session,
                     )
-                    dataset['events'].append(event_df)
+                    dataset["events"].append(event_df)
 
         # concatenate data across sessions if requested
         if concatenate:
             if verbose:
                 print("Concatenating data across sessions...")
-            
-            dataset['physio'] = [pd.concat(dataset['physio'], axis=0, ignore_index=True)]
+
+            dataset["physio"] = [
+                pd.concat(dataset["physio"], axis=0, ignore_index=True)
+            ]
             # do not concatenate fmri data if not converted to 2d
             if convert_to_2d:
-                dataset['fmri'] = [np.concatenate(dataset['fmri'], axis=0)]
+                dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
             else:
-                print("Warning: fmri data not concatenated because convert_to_2d is False.")
+                print(
+                    "Warning: fmri data not concatenated because convert_to_2d is False."
+                )
             # events are not concatenated to preserve trial timing across runs
 
         if verbose:
@@ -261,12 +273,12 @@ class DatasetEuskalibur:
         return DatasetLoad(**dataset)
 
     def events_to_df(
-        self, 
-        fps_onset: List[str], 
+        self,
+        fps_onset: List[str],
         fps_duration: List[str],
         conditions: List[str],
         task: str,
-        session: str
+        session: str,
     ) -> pd.DataFrame:
         """
         Convert 1D onset and duration files (from AFNI)
@@ -291,34 +303,31 @@ class DatasetEuskalibur:
         # extract event timings
         event_timing = []
         for c in conditions:
-            if task == 'pinel' or task == 'motor':
+            if task == "pinel" or task == "motor":
                 onsets, durations = _extract_timing_pinel_motor(
-                    fps_onset=fps_onset,
-                    fps_duration=fps_duration,
-                    condition=c
+                    fps_onset=fps_onset, fps_duration=fps_duration, condition=c
                 )
-            elif task == 'simon':
+            elif task == "simon":
                 onsets, durations = _extract_timing_simon(
-                    fps_onset=fps_onset, 
-                    condition=c
+                    fps_onset=fps_onset, condition=c
                 )
             else:
-                raise NotImplementedError(f"Event extraction not implemented for task '{task}'")
+                raise NotImplementedError(
+                    f"Event extraction not implemented for task '{task}'"
+                )
 
             for onset, duration in zip(onsets, durations):
                 event_timing.append((c, onset, duration))
 
-        event_df = pd.DataFrame(event_timing, columns=['trial_type', 'onset', 'duration'])
-        event_df = event_df.sort_values(by='onset')
+        event_df = pd.DataFrame(
+            event_timing, columns=["trial_type", "onset", "duration"]
+        )
+        event_df = event_df.sort_values(by="onset")
         # insert session column
-        event_df.insert(0, 'session', session)
+        event_df.insert(0, "session", session)
         return event_df
-    
-    def load_physio(
-        self, 
-        fp: str,
-        normalize: bool = False
-    ) -> pd.DataFrame:
+
+    def load_physio(self, fp: str, normalize: bool = False) -> pd.DataFrame:
         """
         Load the preprocessed physio data from a TSV file.
 
@@ -341,34 +350,29 @@ class DatasetEuskalibur:
         fp: str,
         normalize: bool = False,
         convert_to_2d: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> np.ndarray:
         """
         Load the preprocessed fMRI data from a NIfTI file, delegating to shared utils.
         Returns time x voxels if convert_to_2d else a 4D NIfTI image.
         """
         return _load_fmri(
-            fp, 
-            self.mask, # type: ignore
-            normalize=normalize, 
+            fp,
+            self.mask,  # type: ignore
+            normalize=normalize,
             convert_to_2d=convert_to_2d,
-            verbose=verbose
-        ) # type: ignore
+            verbose=verbose,
+        )  # type: ignore
 
-    def to_4d(
-        self,
-        fmri_data: np.ndarray
-    ) -> nib.nifti1.Nifti1Image:
+    def to_4d(self, fmri_data: np.ndarray) -> nib.nifti1.Nifti1Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        return _to_4d(fmri_data, self.mask) # type: ignore
+        return _to_4d(fmri_data, self.mask)  # type: ignore
 
 
 def _extract_timing_pinel_motor(
-    fps_onset: List[str],
-    fps_duration: List[str],
-    condition: str
+    fps_onset: List[str], fps_duration: List[str], condition: str
 ) -> tuple[List[float], List[float]]:
     """Extract timing information for a specific condition from onset and duration file paths for pinel task.
 
@@ -393,30 +397,37 @@ def _extract_timing_pinel_motor(
     # find onset files for condition
     fp_condition_onset = [fp for fp in fps_onset if condition in fp]
     if len(fp_condition_onset) == 0:
-            raise ValueError(f"No onset files found for condition: {condition} in pinel task")
+        raise ValueError(
+            f"No onset files found for condition: {condition} in pinel task"
+        )
     elif len(fp_condition_onset) > 1:
-        raise ValueError(f"Multiple onset files found for condition: {condition} in pinel task")
+        raise ValueError(
+            f"Multiple onset files found for condition: {condition} in pinel task"
+        )
     # load onset files for condition
-    with open(fp_condition_onset[0], 'r') as f:
-        c_onsets = [float(o) for o in f.read().strip().split(' ')]
+    with open(fp_condition_onset[0], "r") as f:
+        c_onsets = [float(o) for o in f.read().strip().split(" ")]
 
     # find duration files for condition
     fp_condition_duration = [fp for fp in fps_duration if condition in fp]
     if len(fp_condition_duration) == 0:
-        raise ValueError(f"No duration files found for condition: {condition} in pinel task")
+        raise ValueError(
+            f"No duration files found for condition: {condition} in pinel task"
+        )
     elif len(fp_condition_duration) > 1:
-        raise ValueError(f"Multiple duration files found for condition: {condition} in pinel task")
+        raise ValueError(
+            f"Multiple duration files found for condition: {condition} in pinel task"
+        )
     # load duration files for condition
-    with open(fp_condition_duration[0], 'r') as f:
-        c_durations = [float(d) for d in f.read().strip().split(' ')]
+    with open(fp_condition_duration[0], "r") as f:
+        c_durations = [float(d) for d in f.read().strip().split(" ")]
 
     # extract timing information from file paths for pinel task
     return c_onsets, c_durations
 
 
 def _extract_timing_simon(
-    fps_onset: List[str],
-    condition: str
+    fps_onset: List[str], condition: str
 ) -> tuple[List[float], List[float]]:
     """
     Extract timing information for a specific condition from onset and duration
@@ -443,21 +454,31 @@ def _extract_timing_simon(
     # find onset files for condition
     fps_condition_onset = [fp for fp in fps_onset if condition in fp]
     if len(fps_condition_onset) == 0:
-            raise ValueError(f"No onset files found for condition: {condition} in simon task")
+        raise ValueError(
+            f"No onset files found for condition: {condition} in simon task"
+        )
     elif len(fps_condition_onset) == 1:
-        raise ValueError(f"Only one onset file found for condition: {condition} in simon task. Two files expected (correct and incorrect conditions).")
+        raise ValueError(
+            f"Only one onset file found for condition: {condition} in simon task. Two files expected (correct and incorrect conditions)."
+        )
     elif len(fps_condition_onset) > 2:
-        raise ValueError(f"More than two onset files found for condition: {condition} in simon task")
-    
+        raise ValueError(
+            f"More than two onset files found for condition: {condition} in simon task"
+        )
+
     # load onset files for correct and incorrect conditions
     c_onsets = []
     c_durations = []
     for fp in fps_condition_onset:
-        with open(fp, 'r') as f:
-            c_onset_duration = [o.split(':') for o in f.read().strip().split(' ')]
+        with open(fp, "r") as f:
+            c_onset_duration = [o.split(":") for o in f.read().strip().split(" ")]
             try:
-                c_onsets.extend([float(od[0]) for od in c_onset_duration if float(od[0]) >= 0])
-                c_durations.extend([float(od[1]) for od in c_onset_duration if float(od[0]) >= 0])
+                c_onsets.extend(
+                    [float(od[0]) for od in c_onset_duration if float(od[0]) >= 0]
+                )
+                c_durations.extend(
+                    [float(od[1]) for od in c_onset_duration if float(od[0]) >= 0]
+                )
             except IndexError:
                 raise ValueError(
                     f"Onset file for condition: {condition} in simon task does not have correct format."
