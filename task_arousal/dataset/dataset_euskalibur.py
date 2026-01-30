@@ -9,7 +9,7 @@ import nibabel as nib
 import numpy as np
 
 from task_arousal.constants import MASK_EUSKALIBUR
-from task_arousal.io.file import FileMapperEuskalibur
+from task_arousal.io.file import FileMapper
 from .dataset_utils import (
     load_physio as _load_physio,
     load_fmri as _load_fmri,
@@ -67,13 +67,13 @@ class DatasetEuskalibur:
         """
         self.subject = subject
         # map file paths associated to subject
-        self.file_mapper = FileMapperEuskalibur(subject)
+        self.file_mapper = FileMapper(dataset = 'euskalibur', subject=subject)
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
         # get available sessions from mapper
         self.sessions = self.file_mapper.sessions
         # attach mask to instance
-        self.mask = MASK_EUSKALIBUR
+        self.mask = nib.nifti1.load(MASK_EUSKALIBUR)
 
     def load_data(
         self,
@@ -349,7 +349,7 @@ class DatasetEuskalibur:
         """
         return _load_fmri(
             fp, 
-            self.mask, 
+            self.mask, # type: ignore
             normalize=normalize, 
             convert_to_2d=convert_to_2d,
             verbose=verbose
@@ -358,7 +358,7 @@ class DatasetEuskalibur:
     def to_4d(
         self,
         fmri_data: np.ndarray
-    ) -> nib.Nifti1Image: # type: ignore
+    ) -> nib.nifti1.Nifti1Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
