@@ -195,7 +195,7 @@ class DistributedLagPhysioModel:
         knot locations for the spline basis across temporal lags. If supplied, this
         overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
         n_knots parameter are ignored.
-    basis: Literal['cr','bs']
+    basis_type: Literal['cr','bs']
         basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
 
     Methods
@@ -215,7 +215,7 @@ class DistributedLagPhysioModel:
         knots_per_sec: float = 0.3,
         n_knots: int | None = None,
         knots: List[int] | None = None,
-        basis: Literal["cr", "bs"] = "cr",
+        basis_type: Literal["cr", "bs"] = "cr",
     ):
         # specify array of lags
         self.tr = tr
@@ -226,7 +226,7 @@ class DistributedLagPhysioModel:
         self.knots_per_sec = knots_per_sec
         self.n_knots = n_knots
         self.knots = knots
-        self.basis_type = basis
+        self.basis_type = basis_type
 
     def fit(self, X: np.ndarray, Y: np.ndarray):
         """
@@ -393,7 +393,7 @@ class DistributedLagEventModel:
         knot locations for the spline basis across temporal lags. If supplied, this
         overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
         n_knots parameter are ignored.
-    basis: Literal['cr','bs']
+    basis_type: Literal['cr','bs']
         basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
     regressor_duration: float | None
         fix the duration of all spline regressors - i.e. the duration after onset of the event.
@@ -409,7 +409,7 @@ class DistributedLagEventModel:
         knots_per_sec: float = 0.3,
         n_knots: int | None = None,
         knots: List[int] | None = None,
-        basis: Literal["cr", "bs"] = "cr",
+        basis_type: Literal["cr", "bs"] = "cr",
         regressor_duration: float | None = None,
     ):
         self.tr = tr
@@ -417,7 +417,7 @@ class DistributedLagEventModel:
         self.knots_per_sec = knots_per_sec
         self.n_knots = n_knots
         self.knots = knots
-        self.basis_type = basis
+        self.basis_type = basis_type
         self.regressor_duration = regressor_duration
 
     def fit(self, event_dfs: List[pd.DataFrame], outcome_data: List[np.ndarray]):
