@@ -10,14 +10,12 @@ load_dotenv()
 
 # path to data directory
 DATA_DIRECTORY_EUSKALIBUR = os.getenv("DATA_DIRECTORY_EUSKALIBUR", "data/euskalibur")
-DATA_DIRECTORY_IBC = os.getenv("DATA_DIRECTORY_IBC", "data/ibc")
 DATA_DIRECTORY_PAN = os.getenv("DATA_DIRECTORY_PAN", "data/pan")
 # flag indicating if the data should be searched in the 'derivatives' directory
 IS_DERIVED = os.getenv("IS_DERIVED", "false").lower() == "true"
 
 # Brain masks
 MASK_EUSKALIBUR = "templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz"
-MASK_IBC = "templates/MNI152_T1_3mm_brain_mask_dil_ibc.nii.gz"
 MASK_PAN = "templates/MNI152_T1_3mm_brain_mask_dil_pan.nii.gz"
 MASK_GM_PAN = "templates/MNI152_T1_3mm_gm_mask_pan.nii.gz"
 # TR (Repetition Time) in seconds
@@ -39,7 +37,6 @@ HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
 FWHM_EUSKALIBUR = 4  # in mm
 FWHM_PAN = 4  # in mm
-FWHM_IBC = 5  # in mm
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = [
     "respiratory_effort",
