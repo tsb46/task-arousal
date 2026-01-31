@@ -7,12 +7,20 @@ from dataclasses import dataclass
 from typing import Literal, List
 
 import numpy as np
+import pandas as pd
 
 from numpy.linalg import pinv
 from scipy.signal import find_peaks
 from scipy.stats import zscore
 
 from sklearn.cluster import KMeans
+
+from task_arousal.analysis.basis import create_spline_event_reg
+from task_arousal.analysis.utils import get_trials_from_event_dfs
+from task_arousal.constants import EVENT_COLUMNS, SLICE_TIMING_REF
+
+# define the resampling of the event time course for boxcar function (in seconds)
+RESAMPLE_TR = 0.01  # seconds
 
 
 @dataclass
@@ -191,7 +199,8 @@ class CAP:
 
 class BilinearFMRI:
     """
-    Bilinear (tensor) regression for fMRI using spatial CAPs and temporal spline bases.
+    Bilinear (tensor) regression for fMRI using spatial CAPs and temporal spline bases (see
+    dlm.py for spline basis construction documentation).
 
     Model:
         Y ~= (X A^T) S
@@ -212,25 +221,61 @@ class BilinearFMRI:
 
     def __init__(
         self,
+        tr: float,
         normalize_S: Literal["l2", "maxabs"] | None = "l2",
         ridge_lambda: float = 1e-2,
-        eps: float = 1e-12,
+        regressor_extend: float = 10.0,
+        knots_per_sec: float = 0.3,
+        n_knots: int | None = None,
+        knots: List[int] | None = None,
+        basis_type: Literal["cr", "bs"] = "cr",
+        regressor_duration: float | None = None,
         center: bool = True,
+        eps: float = 1e-12,
     ):
         """
         Parameters
         ----------
-        ridge_lambda : float
-            Ridge regularization parameter (0 = ordinary least squares). Default 1e-2.
+        tr : float
+            Repetition time (TR) of fMRI data in seconds.
         normalize_S : {'l2', 'maxabs'} | None
             Optional normalization of CAP maps to fix scale indeterminacy and ensure comparability of coupling coefficients across CAPs.
+        ridge_lambda : float
+            Ridge regularization parameter (0 = ordinary least squares). Default 1e-2.
+        regressor_extend: float
+            how much time (in seconds) after the end of the event to extend the regressor. If None, the regressor
+            will only cover the duration of the event. Defaults is 10 seconds. If regressor_duration is set, this parameter is ignored.
+        knots_per_sec: float
+            number of knots per second in the spline basis across temporal lags. This ensures
+            that varying duration trials have similar temporal smoothness in the basis. For example,
+            a value of 0.5 results in one knot every 2 seconds. Default is 0.5 knots per second.
+        n_knots: int | None
+            fix the number of knots in the spline basis across temporal lags. If this parameter is set,
+            the knots_per_sec parameter is ignored. Default is None.
+        knots: List[int] | None
+            knot locations for the spline basis across temporal lags. If supplied, this
+            overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
+            n_knots parameter are ignored.
+        basis_type: Literal['cr','bs']
+            basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
+        regressor_duration: float | None
+            fix the duration of all spline regressors - i.e. the duration after onset of the event.
+            If set to None, the regressor duration will be set to the event duration from the event data.
+            Note, that if regressor_duration is None, the number of lags (nlags) will vary across events.
         center : bool
             Whether to mean-center Y and X before fitting.
         eps : float
             Small constant to avoid division by zero.
         """
+        self.tr = tr
         self.lam = ridge_lambda
         self.normalize_S = normalize_S
+        self.regressor_extend = regressor_extend
+        self.knots_per_sec = knots_per_sec
+        self.n_knots = n_knots
+        self.knots = knots
+        self.basis_type = basis_type
+        self.regressor_duration = regressor_duration
         self.center = center
         self.eps = eps
 
@@ -249,13 +294,29 @@ class BilinearFMRI:
     # -----------------------------------------------------
 
     def fit(
-        self, Y: np.ndarray, S: np.ndarray, X: np.ndarray, compute_Y_hat: bool = True
+        self,
+        event_dfs: List[pd.DataFrame],
+        fmri_data: List[np.ndarray],
+        cap_maps: np.ndarray,
+        Y: np.ndarray,
+        S: np.ndarray,
+        X: np.ndarray,
+        compute_Y_hat: bool = True,
     ):
         """
         Fit bilinear regression model.
 
         Parameters
         ----------
+        event_dfs: list of pd.DataFrame
+            List of event dataframes for each run. Used to construct X (T, B) where
+            T is number of temporally concatenated time points and B is number of basis functions.
+        fmri_data: list of np.ndarray
+            List of fMRI data arrays (time points x voxels) for each run. Used to construct Y (T, V) where
+            T is the temporally concatenated time points across runs and V is number of voxels.
+        cap_maps: np.ndarray
+            CAP spatial patterns - X (K, V) where K is number of CAPs and V is number of voxels.
+
         Y : array, shape (T, V)
             Task fMRI data
         S : array, shape (K, V)
@@ -268,8 +329,59 @@ class BilinearFMRI:
         self
         """
 
+        # check that event_dfs and outcome_data have same length
+        if len(event_dfs) != len(fmri_data):
+            raise ValueError("event_dfs and fmri_data must have the same length")
+        # check that event_dfs have required columns
+        for i, df in enumerate(event_dfs):
+            if not all(col in df.columns for col in EVENT_COLUMNS):
+                raise ValueError(f"Missing columns: {EVENT_COLUMNS} in dataframe {i}")
+
+        # get trial types from all event dfs
+        self.trial_types = get_trials_from_event_dfs(event_dfs)
+
+        # create event regressors for each session/run
+        (
+            self.event_regs,
+            self.nlags,
+            self.basis,
+            self.trial_durations,
+            self.trial_durations_extend,
+        ) = create_spline_event_reg(
+            event_dfs=event_dfs,
+            outcome_data=fmri_data,
+            trial_types=self.trial_types,
+            tr=self.tr,
+            resample_tr=RESAMPLE_TR,
+            slice_timing_ref=SLICE_TIMING_REF,
+            knots_per_sec=self.knots_per_sec,
+            n_knots=self.n_knots,
+            knots=self.knots,
+            basis_type=self.basis_type,
+            regressor_duration=self.regressor_duration,
+            regressor_extend=self.regressor_extend,
+        )
+
+        # create column names for event regressors
+        self.event_reg_cols = [
+            f"{trial}_lag_spline{n + 1}"
+            for trial in self.trial_types
+            for n in range(self.basis[trial]._n_knots)
+        ]
+
+        # concatenate and z-score temporal regressors across runs
+        X = np.vstack(self.event_regs)
+        X = np.array(zscore(X, axis=0))
+
+        # concatenate and z-score fMRI data across runs
+        Y = np.vstack(fmri_data)
+        Y = np.array(zscore(Y, axis=0))
+        # free memory
+        del fmri_data
+
+        # initialize matrices
         Y = np.asarray(Y, dtype=float)
-        S = np.asarray(S, dtype=float)
+        S = np.asarray(cap_maps, dtype=float)
         X = np.asarray(X, dtype=float)
 
         if Y.ndim != 2:
@@ -361,53 +473,33 @@ class BilinearFMRI:
 
         return self
 
-    def project_trial_coefficents(
-        self, basis: np.ndarray, trial_idx: List[int] | None = None
-    ) -> np.ndarray:
+    def project_trial_coefficents(self, trial: str) -> np.ndarray:
         """
-        Project coefficients of temporal spline regressors (task structure) in
+        Project trial-specific coefficients of temporal spline regressors (task structure) in
         bilinear coupling matrix A back into time space (time since trial onset).
-        Must pass spline basis functions used to construct spline regressors X. Also,
-        if multiple trials were concatenated to form X, must specify which trial to project using
-        trial_idx indices - note, indices are zero-based and the end index is exclusive.
 
         Parameters
         ----------
-        basis : array, shape (B, L)
-            Spline basis functions used to construct X.
-        trial_idx : List[int] | None
-            Optional indices as a list of integers specifying which trial to project.
-            If None, projects all timepoints in X.
+        trial : str
+            Name of the trial to project.
 
         """
         if self.A is None:
             raise ValueError("Model not fit")
 
+        # get number of knots from basis
+        trial_n_knots = self.basis[trial]._n_knots
+        # get indices of trial from event column labels
+        trial_idx = [
+            self.event_reg_cols.index(f"{trial}_lag_spline{i + 1}")
+            for i in range(trial_n_knots)
+        ]
+
         # select trial coefficients
-        if trial_idx is not None:
-            start, end = trial_idx[0], trial_idx[-1]
-            if not (0 <= start < end):
-                raise ValueError(
-                    "Invalid trial_idx: start must be less than end and non-negative"
-                )
-            if end > self.A.shape[1]:
-                raise ValueError("trial_idx end exceeds number of basis functions in A")
-            A_trial = self.A[:, trial_idx]  # (K, B_trial)
-        else:
-            A_trial = self.A  # (K, B)
+        A_trial = self.A[:, trial_idx]  # (K, B_trial)
 
-        # validate shape of basis
-        basis = np.asarray(basis, dtype=float)
-        if basis.ndim != 2:
-            raise ValueError(f"basis must be 2D (B, L), got shape {basis.shape}")
-
-        B, L = basis.shape
-        K, B_a = A_trial.shape
-        # validate basis dimension matches A
-        if B != B_a:
-            raise ValueError(
-                f"Basis B dimension ({B}) must match A B dimension ({B_a}). Ensure correct trial_idx if passing a subset."
-            )
+        # get trial basis
+        basis = self.basis[trial].basis.T  # (B_trial, L)
 
         # project coefficients into time space
         A_project = A_trial @ basis  # (K, L)
