@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 
+from task_arousal.analysis.utils import get_trials_from_event_dfs
+
 
 @dataclass
 class EventAverageResults:
@@ -48,16 +50,7 @@ def event_average(
     """
 
     # get trial types from all event dfs
-    trial_types = []
-    for i, event_df in enumerate(event_dfs):
-        unique_trials = event_df["trial_type"].unique().tolist()
-        for trial in unique_trials:
-            if trial not in trial_types:
-                if i > 0:
-                    warnings.warn(
-                        f"Adding new trial type '{trial}' from dataframe {i} that was not in the first dataframe."
-                    )
-                trial_types.append(trial)
+    trial_types = get_trials_from_event_dfs(event_dfs)
 
     # initialize dicts to hold all events and responses
     all_events = {trial: [] for trial in trial_types}

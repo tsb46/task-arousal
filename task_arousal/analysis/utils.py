@@ -38,3 +38,26 @@ def create_interaction_matrix(
             )
 
     return interaction_mat
+
+
+def get_trials_from_event_dfs(event_dfs, trial_column: str = "trial_type"):
+    """
+    Get trial types from list of event dataframes
+
+    Parameters
+    ----------
+    event_dfs: list of pd.DataFrame
+        List of event dataframes
+    trial_column: str
+        Name of the column containing trial types
+
+    Returns
+    -------
+    trials: list of str
+        List of unique trial types across all event dataframes
+    """
+    # get trial types from all event dfs
+    trials = set()
+    for df in event_dfs:
+        trials.update(df[trial_column].unique().tolist())
+    return list(trials)

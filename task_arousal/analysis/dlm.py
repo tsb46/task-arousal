@@ -16,6 +16,7 @@ from sklearn.linear_model import Ridge
 
 from task_arousal.constants import SLICE_TIMING_REF, EVENT_COLUMNS
 from task_arousal.analysis.basis import create_spline_event_reg, SplineLagBasis
+from task_arousal.analysis.utils import get_trials_from_event_dfs
 
 # define the resampling of the event time course for boxcar function (in seconds)
 RESAMPLE_TR = 0.01  # seconds
@@ -325,16 +326,7 @@ class DistributedLagEventModel:
                 raise ValueError(f"Missing columns: {EVENT_COLUMNS} in dataframe {i}")
 
         # get trial types from all event dfs
-        self.trial_types = []
-        for i, event_df in enumerate(event_dfs):
-            unique_trials = event_df["trial_type"].unique().tolist()
-            for trial in unique_trials:
-                if trial not in self.trial_types:
-                    if i > 0:
-                        warnings.warn(
-                            f"Adding new trial type '{trial}' from dataframe {i} that was not in the first dataframe."
-                        )
-                    self.trial_types.append(trial)
+        self.trial_types = get_trials_from_event_dfs(event_dfs)
 
         # create event regressors for each session/run
         (
