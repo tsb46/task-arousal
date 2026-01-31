@@ -298,9 +298,6 @@ class BilinearFMRI:
         event_dfs: List[pd.DataFrame],
         fmri_data: List[np.ndarray],
         cap_maps: np.ndarray,
-        Y: np.ndarray,
-        S: np.ndarray,
-        X: np.ndarray,
         compute_Y_hat: bool = True,
     ):
         """
