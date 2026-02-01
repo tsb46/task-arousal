@@ -9,9 +9,11 @@ import pickle
 from typing import Literal
 
 import nibabel as nib
+import numpy as np
+from nilearn.masking import apply_mask
 
+from task_arousal.analysis.cap import CAP, BilinearFMRI, CAPResults
 from task_arousal.analysis.pca import PCA
-
 from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
     DistributedLagEventModel,
@@ -81,11 +83,7 @@ TASKS_EVENT_PAN = [
 ]
 
 # define analyses to perform
-ANALYSES = [
-    "dlm_physio",
-    "dlm_event",
-    "pca",
-]
+ANALYSES = ["dlm_physio", "dlm_event", "pca", "bilinear"]
 
 # define Dataset type
 Dataset = DatasetEuskalibur | DatasetPan
@@ -191,11 +189,11 @@ def main(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
-    # only perform DLM and GLM physio analyses for tasks with event conditions
-    if any(a in _analysis for a in ["dlm_event", "glm_physio", "dlm_ca", "pls", "rrr"]):
+    # only perform DLM and bilinear regression analyses for tasks with event conditions
+    if any(a in _analysis for a in ["dlm_event", "bilinear"]):
         for task in tasks_event:
             print(
-                f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event and GLM with physio analyses"
+                f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event and bilinear regression analyses"
             )
             data: DatasetLoad = ds.load_data(task=task, concatenate=False)  # type: ignore
 
@@ -204,6 +202,21 @@ def main(
                 _dlm_event(dataset, data, ds, tr, _subject, task)
                 print(
                     f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
+                )
+            if "bilinear" in _analysis:
+                # perform bilinear regression analysis
+                _bilinear_regression(
+                    dataset,
+                    data,
+                    ds,
+                    tr,
+                    brain_mask=mask,
+                    gm_mask=mask_gm,
+                    subject=_subject,
+                    task=task,
+                )
+                print(
+                    f"Bilinear regression analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
 
@@ -269,6 +282,134 @@ def _dlm_event(
                 "wb",
             ),
         )
+
+
+def _bilinear_regression(
+    dataset: str,
+    data: DatasetLoad,
+    ds: Dataset,
+    tr: float,
+    brain_mask: str,
+    gm_mask: str,
+    subject: str,
+    task: str,
+) -> None:
+    """
+    Perform Bilinear Regression analysis on fMRI data and save results to files
+    Steps:
+    1) Estimate Co-activation Patterns (CAPs) from resting-state fMRI data from peaks of the global signal
+    2) Perform bilinear regression to relate resting-state CAPs to task onsets
+
+    Parameters
+    ----------
+    dataset : str
+        Dataset identifier
+    data : DatasetLoad
+        Loaded task dataset containing fMRI data and associated information
+    ds : Dataset
+        Dataset object for handling data operations
+    tr: float
+        Repetition time (TR) of fMRI data
+    brain_mask : str
+        Path to brain mask file - for masking fMRI data
+    gm_mask : str
+        Path to gray matter mask file - for extracting global signal within gray matter
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    """
+    # get task conditions
+    if dataset == "euskalibur":
+        if task == "pinel":
+            conditions = PINEL_CONDITIONS
+        elif task == "simon":
+            conditions = SIMON_CONDITIONS
+        elif task == "motor":
+            conditions = MOTOR_CONDITIONS_EUSKALIBUR
+        else:
+            raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
+    else:
+        if task in PAN_CONDITIONS:
+            conditions = PAN_CONDITIONS[task]["conditions"]
+        else:
+            raise ValueError(f"Task {task} not recognized for PAN dataset")
+    # CAP only needs to be estimated once per subject from resting-state data
+    # check for metadata file to see if CAPs have already been estimated
+    if not os.path.exists(
+        f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_metadata.pkl"
+    ):
+        print(
+            f"Estimating CAPs from resting-state data for dataset {dataset}, subject {subject}"
+        )
+        # load brain and gray matter masks
+        brain_mask_nii = nib.nifti1.load(brain_mask)
+        gm_mask_nii = nib.nifti1.load(gm_mask)
+        # get 1d gray matter mask
+        gm_mask_vec = apply_mask(gm_mask_nii, brain_mask_nii)
+        # load resting-state data
+        data_rest = ds.load_data(
+            task="rest",
+            concatenate=True,
+        )
+        # estimate CAPs from resting-state data with
+        # fixed number of CAPs and 90th percentile peak thresholding
+        cap_model = CAP(
+            n_caps=5,
+            peak_method="percentile",
+            peak_threshold=90,
+            peak_use_local_maxima=False,
+            gray_matter_mask=gm_mask_vec,
+        )
+        cap_res = cap_model.detect(data_rest["fmri"][0])
+        # write out CAP spatial maps to nifti file
+        cap_maps_4d = ds.to_4d(cap_res.cap_maps)
+        nib.nifti1.save(
+            cap_maps_4d,
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_maps.nii.gz",
+        )
+        # write out CAP metadata to pickle file
+        pickle.dump(
+            cap_res,
+            open(
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_metadata.pkl", "wb"
+            ),
+        )
+        # free memory
+        del data_rest
+    else:
+        print(f"Loading existing CAP metadata for dataset {dataset}, subject {subject}")
+        # load existing CAP metadata
+        cap_res: CAPResults = pickle.load(
+            open(f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_metadata.pkl", "rb")
+        )
+
+    print(
+        f"Performing bilinear regression analysis for dataset {dataset}, subject {subject}, task {task}"
+    )
+
+    # fit bilinear regression model with default parameters
+    # using CAP maps from resting-state data
+    blinear_model = BilinearFMRI(tr=tr)
+    blinear_model.fit(
+        event_dfs=data["events"],
+        fmri_data=data["fmri"],
+        cap_maps=cap_res.cap_maps,
+    )
+
+    trial_proj = []
+    for condition in conditions:
+        proj = blinear_model.project_trial_coefficients(condition)
+        trial_proj.append(np.array(proj))
+
+    # write bilinear regression results to pickle file
+    pickle.dump(
+        (trial_proj, conditions),
+        open(
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_bilinear_regression_metadata.pkl",
+            "wb",
+        ),
+    )
 
 
 def _dlm_physio(
@@ -381,9 +522,8 @@ if __name__ == "__main__":
         "-d",
         "--dataset",
         type=str,
-        required=False,
-        default="euskalibur",
-        choices=["euskalibur"],
+        required=True,
+        choices=["euskalibur", "pan"],
         help="Dataset to perform analysis pipeline on",
     )
     # add subject argument

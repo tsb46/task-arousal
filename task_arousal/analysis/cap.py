@@ -470,7 +470,7 @@ class BilinearFMRI:
 
         return self
 
-    def project_trial_coefficents(self, trial: str) -> np.ndarray:
+    def project_trial_coefficients(self, trial: str) -> np.ndarray:
         """
         Project trial-specific coefficients of temporal spline regressors (task structure) in
         bilinear coupling matrix A back into time space (time since trial onset).
