@@ -5,8 +5,6 @@ Distributed lag modeling of physio signals, events, and fMRI data
 from dataclasses import dataclass
 from typing import List, Literal
 
-import warnings
-
 import numpy as np
 import pandas as pd
 
