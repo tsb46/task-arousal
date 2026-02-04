@@ -27,6 +27,7 @@ def event_average(
     event_dfs: list[pd.DataFrame],
     fmri_data: list[np.ndarray],
     duration_extend: int = 5,
+    window_bounds: tuple[float, float] | None = None,
 ) -> EventAverageResults:
     """
     Compute event-averaged fMRI response for each trial type.
@@ -42,6 +43,10 @@ def event_average(
     duration_extend : int, optional
         Additional duration to extend the event window in TRs, by default 5.
         This can help capture some of the post-event responses.
+    window_bounds : tuple of float, optional
+        Ignore trial durations and fix time window around each event onset to
+        consider (start, end) in seconds. If this parameter is passed, duration_extend
+        is ignored. Default is None.
 
     Returns
     -------
@@ -65,7 +70,24 @@ def event_average(
             for onset, duration in zip(onsets, durations):
                 # onset and duration are in seconds, convert to indices
                 onset_idx = int(onset / tr)
-                duration_idx = int(duration / tr) + duration_extend
+                if window_bounds is not None:
+                    start_offset, end_offset = window_bounds
+                    duration_idx = int((end_offset - start_offset) / tr)
+                    onset_idx += int(start_offset / tr)
+                else:
+                    duration_idx = int(duration / tr) + duration_extend
+                # if the onset index is out of bounds, skip
+                if onset_idx < 0 or onset_idx >= fmri.shape[0]:
+                    warnings.warn(
+                        f"Event at onset {onset}s is out of fMRI bounds. Skipping."
+                    )
+                    continue
+                # if the response segment exceeds fmri length, skip
+                if onset_idx + duration_idx > fmri.shape[0]:
+                    warnings.warn(
+                        f"Event at onset {onset}s with duration {duration}s exceeds fMRI length. Skipping."
+                    )
+                    continue
                 response_segment = fmri[onset_idx : onset_idx + duration_idx]
                 all_events[trial_type].append((onset, duration))
                 all_responses[trial_type].append(response_segment)
