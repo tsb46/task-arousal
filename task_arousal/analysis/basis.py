@@ -93,13 +93,17 @@ class SplineLagBasis:
                 if self.tr is None:
                     raise ValueError("tr must be specified if n_knots is None")
                 duration_sec = (nlags - neg_nlags) * self.tr
-                self._n_knots = max(3, int(np.ceil(duration_sec * self.knots_per_sec)))
+                _n_knots = max(3, int(np.ceil(duration_sec * self.knots_per_sec)))
             else:
-                self._n_knots = self.n_knots
+                _n_knots = self.n_knots
 
             self.basis = dmatrix(
-                f"{self.basis_type}(x, df=self._n_knots) - 1", {"x": self.lags}
+                f"{self.basis_type}(x, df={_n_knots}) - 1", {"x": self.lags}
             )
+
+        # Ensure _n_knots always reflects the actual basis dimensionality
+        # (patsy may adjust df/knots depending on basis_type).
+        self._n_knots = int(np.asarray(self.basis).shape[1])
 
         return self
 
