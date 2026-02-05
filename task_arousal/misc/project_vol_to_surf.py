@@ -350,13 +350,13 @@ def project_mni_stat_to_fsnative_surfaces(
             Number of samples between white and pial surfaces (higher is smoother, slower).
     keep_intermediate_t1w : bool
             If True, save the intermediate T1w-warped NIfTI to `out_dir`. Requires `out_dir`.
-        mask_t1w : str | Path | 'fmriprep' | None
-            Optional T1w-space mask to apply *after* MNI->T1w warping and *before* vol->surf.
-            - None: no masking is applied.
-            - 'fmriprep': auto-locate the subject's fMRIPrep T1w brain mask in the anat directory.
-            - path: explicit path to a 3D mask NIfTI in T1w space.
-        mask_fill_value : float
-            Value assigned to voxels outside the mask (default 0.0).
+    mask_t1w : str | Path | 'fmriprep' | None
+        Optional T1w-space mask to apply *after* MNI->T1w warping and *before* vol->surf.
+        - None: no masking is applied.
+        - 'fmriprep': auto-locate the subject's fMRIPrep T1w brain mask in the anat directory.
+        - path: explicit path to a 3D mask NIfTI in T1w space.
+    mask_fill_value : float
+        Value assigned to voxels outside the mask (default 0.0).
 
     Returns
     -------
