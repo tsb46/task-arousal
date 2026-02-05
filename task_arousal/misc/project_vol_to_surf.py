@@ -20,6 +20,7 @@ import numpy as np
 import nibabel as nib
 
 from nilearn import surface
+from nilearn.image import resample_to_img
 from nibabel.gifti.gifti import GiftiDataArray, GiftiImage
 
 Hemi = Literal["L", "R"]
@@ -118,6 +119,61 @@ def _find_single(anat_dir: Path, pattern: str, what: str) -> Path:
             + ", ".join(m.name for m in matches)
         )
     return matches[0]
+
+
+def _apply_t1w_mask_inplace(
+    stat_t1w_fp: Path,
+    mask_t1w_fp: Path,
+    *,
+    fill_value: float = 0.0,
+) -> None:
+    """Apply a 3D T1w-space brain mask to a 3D/4D T1w-space NIfTI in-place."""
+
+    stat_img = nib.nifti1.load(str(stat_t1w_fp))
+    if not isinstance(stat_img, nib.nifti1.Nifti1Image):
+        raise TypeError(f"Expected NIfTI image for stat_t1w_fp, got {type(stat_img)}")
+
+    mask_img = nib.nifti1.load(str(mask_t1w_fp))
+    if not isinstance(mask_img, nib.nifti1.Nifti1Image):
+        raise TypeError(f"Expected NIfTI image for mask_t1w_fp, got {type(mask_img)}")
+
+    if mask_img.ndim != 3:
+        raise ValueError(f"mask_t1w must be 3D, got shape {mask_img.shape}")
+
+    # Resample mask to stat grid if needed.
+    same_grid = mask_img.shape[:3] == stat_img.shape[:3]
+    same_affine = (
+        mask_img.affine is not None
+        and stat_img.affine is not None
+        and np.allclose(mask_img.affine, stat_img.affine)
+    )
+    if (not same_grid) or (not same_affine):
+        mask_img = resample_to_img(
+            source_img=mask_img,
+            target_img=stat_img,
+            interpolation="nearest",
+            force_resample=True,
+            copy_header=True,
+        )
+        assert isinstance(mask_img, nib.nifti1.Nifti1Image)
+
+    mask = np.asanyarray(mask_img.dataobj) > 0.5
+    stat = np.asanyarray(stat_img.dataobj)
+
+    if stat.ndim == 3:
+        stat_masked = np.where(mask, stat, fill_value)
+    elif stat.ndim == 4:
+        stat_masked = np.where(mask[..., None], stat, fill_value)
+    else:
+        raise ValueError(f"stat_t1w must be 3D or 4D, got shape {stat.shape}")
+
+    out_img = nib.nifti1.Nifti1Image(
+        np.asarray(stat_masked, dtype=np.float32),
+        affine=stat_img.affine,
+        header=stat_img.header.copy(),
+    )
+    out_img.update_header()
+    nib.nifti1.save(out_img, str(stat_t1w_fp))
 
 
 def _run_checked(cmd: list[str]) -> None:
@@ -248,6 +304,8 @@ def project_mni_stat_to_fsnative_surfaces(
     subject: str,
     fmriprep_dir: str | Path,
     mni_space: str = "MNI152NLin2009cAsym",
+    mask_t1w: str | Path | Literal["fmriprep"] | None = "fmriprep",
+    mask_fill_value: float = 0.0,
     out_dir: str | Path | None = None,
     out_basename: str | None = None,
     hemis: tuple[Hemi, ...] = ("L", "R"),
@@ -292,6 +350,13 @@ def project_mni_stat_to_fsnative_surfaces(
             Number of samples between white and pial surfaces (higher is smoother, slower).
     keep_intermediate_t1w : bool
             If True, save the intermediate T1w-warped NIfTI to `out_dir`. Requires `out_dir`.
+        mask_t1w : str | Path | 'fmriprep' | None
+            Optional T1w-space mask to apply *after* MNI->T1w warping and *before* vol->surf.
+            - None: no masking is applied.
+            - 'fmriprep': auto-locate the subject's fMRIPrep T1w brain mask in the anat directory.
+            - path: explicit path to a 3D mask NIfTI in T1w space.
+        mask_fill_value : float
+            Value assigned to voxels outside the mask (default 0.0).
 
     Returns
     -------
@@ -359,6 +424,19 @@ def project_mni_stat_to_fsnative_surfaces(
         ants_apply=ants_apply,
         ants_interp=ants_interp,
     )
+
+    # Optional masking in T1w space to prevent sampling non-brain voxels.
+    if mask_t1w is not None:
+        if mask_t1w == "fmriprep":
+            mask_fp = Path(f"{anat_dir}/sub-{subject}_desc-brain_mask.nii.gz")
+        else:
+            mask_fp = Path(mask_t1w)
+        _require_exists(mask_fp, "T1w brain mask")
+        _apply_t1w_mask_inplace(
+            stat_t1w_fp=stat_t1w_fp,
+            mask_t1w_fp=mask_fp,
+            fill_value=float(mask_fill_value),
+        )
 
     # --- project to surfaces ---
     results: dict[Hemi, SurfaceProjection] = {}
