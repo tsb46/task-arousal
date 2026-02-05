@@ -8,7 +8,7 @@ reconstructions (fsnative surfaces) and ANTs transforms.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +33,63 @@ class SurfaceProjection:
     texture: np.ndarray
     func_gii: GiftiImage
     out_func_gii: Path | None
+
+
+def write_surface_projection_gifti(
+    proj: SurfaceProjection,
+    out_path: str | Path,
+    *,
+    overwrite: bool = False,
+) -> SurfaceProjection:
+    """Write a SurfaceProjection's GIFTI to disk.
+
+    Parameters
+    ----------
+    proj : SurfaceProjection
+        The projection to write.
+    out_path : str | Path
+        Output filepath for the `.func.gii`.
+    overwrite : bool
+        If False (default), raises if `out_path` exists.
+
+    Returns
+    -------
+    SurfaceProjection
+        A copy of `proj` with `out_func_gii` set to the resolved output path.
+    """
+
+    out_path = Path(out_path).expanduser().resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if out_path.exists() and not overwrite:
+        raise FileExistsError(f"Output already exists: {out_path}")
+
+    nib.save(proj.func_gii, str(out_path))  # type: ignore[attr-defined]
+    return replace(proj, out_func_gii=out_path)
+
+
+def write_surface_projections_gifti(
+    projs: dict[Hemi, SurfaceProjection],
+    out_dir: str | Path,
+    *,
+    out_basename: str,
+    overwrite: bool = False,
+) -> dict[Hemi, SurfaceProjection]:
+    """Write multiple hemisphere projections to disk.
+
+    Output filenames follow:
+    `{out_basename}_hemi-{L|R}_space-fsnative.func.gii`
+    """
+
+    out_dir = Path(out_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    written: dict[Hemi, SurfaceProjection] = {}
+    for hemi, proj in projs.items():
+        out_path = out_dir / f"{out_basename}_hemi-{hemi}_space-fsnative.func.gii"
+        written[hemi] = write_surface_projection_gifti(
+            proj, out_path, overwrite=overwrite
+        )
+    return written
 
 
 def _strip_nii_gz_suffix(name: str) -> str:
@@ -212,10 +269,10 @@ def project_mni_stat_to_fsnative_surfaces(
 
     Parameters
     ----------
-        stat_mni : str | Path
-            Path to a 3D or 4D NIfTI statistical map in MNI space.
-            For 4D inputs (e.g., FIR/HRF timecourses), each volume is warped and
-            projected, and outputs are written as multi-map functional GIFTI.
+    stat_mni : str | Path
+        Path to a 3D or 4D NIfTI statistical map in MNI space.
+        For 4D inputs (e.g., FIR/HRF timecourses), each volume is warped and
+        projected, and outputs are written as multi-map functional GIFTI.
     subject : str
             Subject label without the 'sub-' prefix.
     fmriprep_dir : str | Path
