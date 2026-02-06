@@ -19,6 +19,10 @@ MASK_EUSKALIBUR = "templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz"
 MASK_GM_EUSKALIBUR = "templates/MNI152_T1_3mm_gm_mask_euskalibur.nii.gz"
 MASK_PAN = "templates/MNI152_T1_3mm_brain_mask_dil_pan.nii.gz"
 MASK_GM_PAN = "templates/MNI152_T1_3mm_gm_mask_pan.nii.gz"
+# Surface templates
+SURFACE_LH = "templates/fsLR_den-32k_hemi-L_inflated.surf.gii"
+SURFACE_RH = "templates/fsLR_den-32k_hemi-R_inflated.surf.gii"
+
 # TR (Repetition Time) in seconds
 TR_EUSKALIBUR = 1.5
 TR_PAN = 1.355
