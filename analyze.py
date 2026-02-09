@@ -269,7 +269,7 @@ def _dlm_event(
     # loop through conditions and write predicted functional time courses to nifti files
     for condition in conditions:
         dlm_eval = dlm.evaluate(trial=condition)
-        pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
+        pred_func_img = ds.to_img(dlm_eval.pred_outcome)
         nib.nifti1.save(
             pred_func_img,
             f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}.nii.gz",
@@ -363,7 +363,7 @@ def _bilinear_regression(
         )
         cap_res = cap_model.detect(data_rest["fmri"][0])
         # write out CAP spatial maps to nifti file
-        cap_maps_4d = ds.to_4d(cap_res.cap_maps)
+        cap_maps_4d = ds.to_img(cap_res.cap_maps)
         nib.nifti1.save(
             cap_maps_4d,
             f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_maps.nii.gz",
@@ -460,7 +460,7 @@ def _dlm_physio(
         # estimate functional time courses at each voxel to lagged physio signal
         dlm_eval = dlm.evaluate()
         # write predicted functional time courses to nifti file
-        pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
+        pred_func_img = ds.to_img(dlm_eval.pred_outcome)
         nib.nifti1.save(
             pred_func_img,
             f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}.nii.gz",
@@ -501,7 +501,7 @@ def _pca(
     # run PCA decomposition
     pca_results = pca.decompose(data["fmri"][0])
     # write loadings to nifti file
-    pca_loadings = ds.to_4d(pca_results.loadings.T)
+    pca_loadings = ds.to_img(pca_results.loadings.T)
     nib.nifti1.save(
         pca_loadings,
         f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_pca_loadings.nii.gz",
