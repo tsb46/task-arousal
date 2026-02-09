@@ -5,7 +5,6 @@ a given subject in the Euskalibur dataset.
 
 from typing import List, Literal
 
-from bids import ext
 import pandas as pd
 import nibabel as nib
 import numpy as np

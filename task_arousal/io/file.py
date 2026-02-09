@@ -8,7 +8,7 @@ import warnings
 from pathlib import Path
 from typing import List, Tuple, Literal
 
-from bids import BIDSLayout, ext
+from bids import BIDSLayout
 
 from task_arousal.constants import (
     DATA_DIRECTORY_EUSKALIBUR,
@@ -129,6 +129,7 @@ class FileMapper:
             The type of functional data. 'volume' returns volumetric files
             with the '.nii.gz' extension. 'surface' returns surface files
             with the '.dtseries.nii' extension.
+
         Returns
         -------
         list of str
