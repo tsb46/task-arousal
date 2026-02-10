@@ -263,7 +263,7 @@ class DatasetPan:
         """
         return _load_fmri(
             fp,
-            self.mask,  # type: ignore
+            mask_img=self.mask,  # type: ignore
             normalize=normalize,
             bandpass=bandpass,
             tr=TR_PAN,
@@ -274,7 +274,7 @@ class DatasetPan:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        return _to_img(fmri_data, self.mask)  # type: ignore
+        return _to_img(fmri_data, mask_img=self.mask)  # type: ignore
 
 
 def _extract_timings_pan(
