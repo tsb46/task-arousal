@@ -212,13 +212,12 @@ class PreprocessingPipeline:
 
                     # find matching fmri file to get number of volumes for resampling
                     # different techniques based on dataset
-                    if self.dataset == "euskalibur":
-                        file_entities = self.file_mapper.layout.parse_file_entities(
-                            physio_file[0]
-                        )
-                        matching_fmri_files = self.file_mapper.get_matching_files(
-                            file_entities, "fmri"
-                        )
+                    file_entities = self.file_mapper.layout.parse_file_entities(
+                        physio_file[0]
+                    )
+                    matching_fmri_files = self.file_mapper.get_matching_files(
+                        file_entities, "fmri"
+                    )
 
                     if len(matching_fmri_files) == 0:
                         # in some scenarios, physio may be recorded but no usable fMRI data
@@ -243,7 +242,7 @@ class PreprocessingPipeline:
                         physio_fp=physio_file[0],
                         physio_json=physio_file[1],
                         fmri_fp=matching_fmri_file,
-                        tr=tr,
+                        tr=tr,  # type: ignore
                         fmri_dummy_n=DUMMY_VOLUMES,
                         highpass=HIGHPASS,
                         physio_resample_f=PHYSIO_RESAMPLE_F,
