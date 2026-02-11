@@ -5,6 +5,7 @@ description = "Analysis of task-fMRI with physiological data"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "boto3>=1.42.45",
     "fbpca>=1.0",
     "matplotlib>=3.10.6",
     "neurokit2>=0.2.12",
