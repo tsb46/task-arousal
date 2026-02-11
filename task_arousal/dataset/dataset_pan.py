@@ -12,7 +12,7 @@ import nibabel as nib
 import numpy as np
 
 from task_arousal.constants import MASK_PAN, DUMMY_VOLUMES, TR_PAN
-from task_arousal.io.file import FileMapper
+from task_arousal.io.file import FileMapperBids
 from .dataset_utils import (
     load_fmri as _load_fmri,
     to_img as _to_img,
@@ -40,7 +40,7 @@ class DatasetPan:
         """
         self.subject = subject
         # map file paths associated to subject
-        self.file_mapper = FileMapper(dataset="pan", subject=subject)
+        self.file_mapper = FileMapperBids(dataset="pan", subject=subject)
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
         # get available sessions from mapper

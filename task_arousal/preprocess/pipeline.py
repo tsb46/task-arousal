@@ -46,7 +46,7 @@ from task_arousal.constants import (
     SURFACE_RH,  # right hemisphere surface template
 )
 
-from task_arousal.io.file import FileMapper
+from task_arousal.io.file import FileMapperBids
 from task_arousal.preprocess.components.physio import physio_pipeline
 from task_arousal.preprocess.components.volume import func_volume_pipeline
 from task_arousal.preprocess.components.surface import func_surface_pipeline
@@ -77,7 +77,7 @@ class PreprocessingPipeline:
 
         # map file paths associated to subject
         if dataset in ["euskalibur", "pan"]:
-            self.file_mapper = FileMapper(dataset, subject)
+            self.file_mapper = FileMapperBids(dataset, subject)
         else:
             raise ValueError(f"Dataset '{dataset}' is not supported.")
         # get available tasks from mapper

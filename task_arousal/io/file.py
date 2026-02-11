@@ -17,7 +17,7 @@ from task_arousal.constants import (
 )
 
 
-class FileMapper:
+class FileMapperBids:
     """
     Maps file paths for a specific subject's fMRI and physiological data in a BIDS dataset.
     """
