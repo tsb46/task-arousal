@@ -2,9 +2,11 @@
 Class for iterating over fMRI and physio data files in BIDS format.
 """
 
+import os
 import re
 import warnings
 
+from glob import glob
 from pathlib import Path
 from typing import List, Tuple, Literal
 
@@ -13,6 +15,7 @@ from bids import BIDSLayout
 from task_arousal.constants import (
     DATA_DIRECTORY_EUSKALIBUR,
     DATA_DIRECTORY_PAN,
+    DATA_DIRECTORY_NSD,
     IS_DERIVED,
 )
 
@@ -108,7 +111,7 @@ class FileMapperBids:
         self,
         task: str,
         sessions: List[str] | None = None,
-        preproc_type: Literal["fmriprep", "final"] = "fmriprep",
+        preproc_type: Literal["orig", "final"] = "orig",
         func_type: Literal["volume", "surface"] = "volume",
     ) -> list[str]:
         """
@@ -120,8 +123,8 @@ class FileMapperBids:
             The task identifier.
         sessions : list of str, optional
             The sessions to include. If None, all sessions are included.
-        preproc_type : {'fmriprep', 'final'}
-            The type of fMRI files to retrieve. 'fmriprep' returns files
+        preproc_type : {'orig', 'final'}
+            The type of fMRI files to retrieve. 'orig' returns files
             with the 'preproc' description (output of fMRIPrep preprocessing).
             'final' returns files with the 'preprocfinal' description
             (output of additional final preprocessing steps).
@@ -139,14 +142,14 @@ class FileMapperBids:
         if func_type == "volume":
             extension = ".nii.gz"
             # set desc based on preproc_type
-            if preproc_type == "fmriprep":
+            if preproc_type == "orig":
                 desc = "preproc"
             elif preproc_type == "final":
                 desc = "preprocfinal"
         elif func_type == "surface":
             extension = ".dtseries.nii"
             # surface files do not have 'preproc' desc in fmripep output
-            if preproc_type == "fmriprep":
+            if preproc_type == "orig":
                 desc = None
             elif preproc_type == "final":
                 desc = "preprocfinal"
@@ -181,7 +184,7 @@ class FileMapperBids:
         task: str,
         sessions: List[str] | None = None,
         return_json: bool = False,
-        preproc_type: Literal["fmriprep", "final"] = "fmriprep",
+        preproc_type: Literal["orig", "final"] = "orig",
     ) -> list[str] | list[Tuple[str, str]]:
         """
         Get the physiological files from all sessions for a specific task.
@@ -194,8 +197,8 @@ class FileMapperBids:
             The sessions to include. If None, all sessions are included.
         return_json : bool
             Whether to return the json sidecar files.
-        preproc_type : {'fmriprep', 'final'}
-            The type of physio files to retrieve. 'fmriprep' returns raw
+        preproc_type : {'orig', 'final'}
+            The type of physio files to retrieve. 'orig' returns raw
             'physio' files output from the fMRIPrep pipeline. 'final' returns
             'preproc' physio files that have undergone preprocessing.
 
@@ -206,7 +209,7 @@ class FileMapperBids:
             the physiological file path and JSON sidecar files will be
             returned as a Tuple (physio_file, json_file).
         """
-        if preproc_type == "fmriprep":
+        if preproc_type == "orig":
             desc = None
         elif preproc_type == "final":
             desc = "preproc"
@@ -279,7 +282,7 @@ class FileMapperBids:
         self,
         file_entities: dict[str, str],
         file_modality: Literal["physio", "fmri"],
-        preproc_type: Literal["fmriprep", "final"] = "fmriprep",
+        preproc_type: Literal["orig", "final"] = "orig",
         func_type: Literal["volume", "surface"] = "volume",
     ) -> list[str]:
         """
@@ -292,8 +295,8 @@ class FileMapperBids:
         file_modality : {'physio', 'fmri'}
             The type of files to retrieve. Options are 'physio' for physiological
             files, 'fmri' for fMRI files.
-        preproc_type : {'fmriprep', 'final'}
-            The stage of processing to retrieve. Options are 'fmriprep' for raw files,
+        preproc_type : {'orig', 'final'}
+            The stage of processing to retrieve. Options are 'orig' for output of fmriprep files,
             'final' for final files.
 
         Returns
@@ -305,7 +308,7 @@ class FileMapperBids:
         if file_modality == "physio":
             suffix = "physio"
             extension = ".tsv.gz"
-            if preproc_type == "fmriprep":
+            if preproc_type == "orig":
                 desc = None
             elif preproc_type == "final":
                 desc = "preproc"
@@ -317,7 +320,7 @@ class FileMapperBids:
             elif func_type == "volume":
                 suffix = "bold"
                 extension = ".nii.gz"
-            if preproc_type == "fmriprep":
+            if preproc_type == "orig":
                 desc = "preproc"
             elif preproc_type == "final":
                 desc = "preprocfinal"
@@ -512,6 +515,596 @@ class FileMapperBids:
         return filenames
 
 
+class FileMapperNSD:
+    """
+    Maps file paths for a specific subject's fMRI and physiological data in the
+    Natural Scene Dataset (NSD). This dataset does not follow BIDS format, so the file paths
+    are mapped based on the known directory structure of the NSD dataset rather than using a BIDSLayout.
+
+    Built for API compatibility with FileMapperBids class.
+    """
+
+    # hard code subjects in NSD dataset
+    available_subjects = [
+        "subj01",
+        "subj02",
+        "subj03",
+        "subj04",
+        "subj05",
+        "subj06",
+        "subj07",
+        "subj08",
+    ]
+    # hard code tasks in NSD dataset
+    available_tasks = ["rest"]
+    # define data directory from constants.py, which can be set through environment variable or defaults to 'data/nsd'
+    data_directory = DATA_DIRECTORY_NSD
+
+    def __init__(self, subject: str):
+        """
+        Initialize the FileMapper for a specific subject.
+
+        Parameters
+        ----------
+        subject : str
+            The subject identifier.
+        """
+        self.subject = subject
+
+        # check if subject is valid
+        if subject not in self.available_subjects:
+            raise ValueError(f"Subject '{subject}' not found in dataset.")
+        # run a glob search to get all the func_files for that subject
+        self.func_files = glob(
+            os.path.join(self.data_directory, "func/orig", f"{subject}*.nii.gz")
+        )
+        # if no files found, raise an error
+        if not self.func_files:
+            raise RuntimeError(
+                f"No functional files found for subject '{subject}' in directory '{self.data_directory}'."
+            )
+        # parse file components to get sessions and runs
+        func_file_components = self._parse_func_file_list_components(self.func_files)
+        # extract sessions and runs from file components
+        self.sessions = sorted(set(comp["session"] for comp in func_file_components))
+        # get the tasks for the subject
+        self.tasks = sorted(set(comp["task"] for comp in func_file_components))
+        # loop through sessions and get runs for each task
+        self.tasks_runs = {}
+        for task in self.tasks:
+            self.tasks_runs[task] = {}
+            for session in self.sessions:
+                # filter file components for this session and task
+                session_task_comps = [
+                    comp
+                    for comp in func_file_components
+                    if comp["session"] == session and comp["task"] == task
+                ]
+                # get runs for this session and task
+                self.tasks_runs[task][session] = sorted(
+                    set(comp["run"] for comp in session_task_comps)
+                )
+
+    def get_fmri_files(
+        self,
+        task: str,
+        sessions: List[str] | None = None,
+        preproc_type: Literal["orig", "final"] = "orig",
+        func_type: Literal["volume", "surface"] = "volume",
+    ) -> list[str]:
+        """
+        Get the fMRI files from all sessions for a specific task.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+        sessions : list of str, optional
+            The sessions to include. If None, all sessions are included.
+        preproc_type : {'orig', 'final'}
+            The type of fMRI files to retrieve. 'orig' returns the minimally
+            preprocessed functional files from NSD.
+            'final' returns files from the additional preprocessing steps.
+        func_type : {'volume', 'surface'}
+            The type of functional data. 'volume' returns volumetric files
+            with the '.nii.gz' extension. 'surface' returns surface files
+            with the '.dtseries.nii' extension.
+
+        Returns
+        -------
+        list of str
+            A list of fMRI file paths.
+        """
+        # set extension based on preprocessing type
+        if func_type == "volume":
+            extension = ".nii.gz"
+        elif func_type == "surface":
+            extension = ".dtseries.nii"
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(
+                        f"Session '{session}' is not valid for subject '{self.subject}'."
+                    )
+
+        fmri_files = []
+        for session in sessions if sessions is not None else self.sessions:
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                for run in runs:
+                    files = self.get_session_fmri_files(
+                        session, task, run=run, desc=preproc_type, extension=extension
+                    )
+                    fmri_files.extend(files)
+            else:
+                files = self.get_session_fmri_files(
+                    session, task, desc=preproc_type, extension=extension
+                )
+                fmri_files.extend(files)
+        return fmri_files
+
+    def get_physio_files(
+        self,
+        task: str,
+        sessions: List[str] | None = None,
+        return_json: bool = False,
+        preproc_type: Literal["orig", "final"] = "orig",
+    ) -> list[str] | list[Tuple[str, str]]:
+        """
+        Get the physiological files from all sessions for a specific task.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+        sessions : list of str, optional
+            The sessions to include. If None, all sessions are included.
+        return_json : bool
+            Whether to return the json sidecar files.
+        preproc_type : {'orig', 'final'}
+            The type of physio files to retrieve. 'orig' returns minimally processed
+            'physio' files output from the NSD pipeline. 'final' returns
+            'preproc' physio files that have undergone additional preprocessing.
+
+        Returns
+        -------
+        list of str or list of tuple of str
+            A list of physiological file paths. If `return_json` is True,
+            the physiological file path and JSON sidecar files will be
+            returned as a Tuple (physio_file, json_file).
+        """
+
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(
+                        f"Session '{session}' is not valid for subject '{self.subject}'."
+                    )
+
+        physio_files = []
+        for session in sessions if sessions is not None else self.sessions:
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                for run in runs:
+                    files = self.get_session_physio_files(
+                        session, task, run=run, desc=preproc_type
+                    )
+                    physio_files.extend(files)
+            else:
+                files = self.get_session_physio_files(session, task, desc=preproc_type)
+                physio_files.extend(files)
+        if return_json:
+            return [(f, f.replace(".tsv.gz", ".json")) for f in physio_files]
+        return physio_files
+
+    def get_event_files(
+        self, task: str, sessions: List[str] | None = None
+    ) -> list[list[tuple[str, str]]]:
+        """
+        Get the event files from all sessions for a specific task.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+
+        Returns
+        -------
+        list of list of tuple of str
+            A nested list of onset and duration file path tuples (onset, duration) by session.
+        """
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(
+                        f"Session '{session}' is not valid for subject '{self.subject}'."
+                    )
+
+        event_files = []
+        for session in sessions if sessions is not None else self.sessions:
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                files = []
+                for run in runs:
+                    run_files = self.get_session_event_files(session, task, run=run)
+                    event_files.extend(run_files)
+            else:
+                files = self.get_session_event_files(session, task)
+                event_files.append(files)
+        return event_files
+
+    def get_matching_files(
+        self,
+        session: str | None,
+        task: str | None,
+        run: str | None,
+        file_modality: Literal["physio", "fmri"],
+        preproc_type: Literal["orig", "final"] = "orig",
+        func_type: Literal["volume", "surface"] = "volume",
+    ) -> List[str] | list[dict[str, str]]:
+        """
+        Get matching physio or fmri file paths based on specified entities using
+        glob patterns. If an entity is None, it will be treated as a wildcard.
+
+        Note, if file_modality is 'physio' and preproc_type is 'orig', the output
+        will a list of dictionaries with keys 'pulse' and 'resp' for the two
+        physio files per run (NSD supplieds physio signals as separate files).
+
+
+        Parameters
+        ----------
+        session : str
+            The session identifier.
+        task : str
+            The task identifier.
+        run : str
+            The run identifier.
+        file_modality : {'physio', 'fmri'}
+            The type of files to retrieve. Options are 'physio' for physiological
+            files, 'fmri' for fMRI files.
+        preproc_type : {'orig', 'final'}
+            The stage of processing to retrieve. Options are 'orig' for minimally
+             processed files,'final' for final processed files.
+
+        Returns
+        -------
+        list of str
+            A list of matching file paths.
+        """
+        # get session, task and run components
+        _session = "*" if session is None else session
+        _task = "*" if task is None else task
+        _run = "*" if run is None else run
+
+        # build glob pattern based on modality
+        if file_modality == "physio":
+            extension = ".tsv"
+            # get base directory based on preproc_type
+            if preproc_type == "orig":
+                base_dir = "physio/orig"
+            elif preproc_type == "final":
+                base_dir = "physio/final"
+
+            if preproc_type == "orig":
+                # for orig physio, return dicts with pulse and resp files
+                pulse_pattern = os.path.join(
+                    self.data_directory,
+                    base_dir,
+                    f"{self.subject}_task-{_task}_session{_session}_run{_run}_physio_puls{extension}",
+                )
+                resp_pattern = os.path.join(
+                    self.data_directory,
+                    base_dir,
+                    f"{self.subject}_task-{_task}_session{_session}_run{_run}_physio_resp{extension}",
+                )
+                pulse_files = glob(pulse_pattern)
+                resp_files = glob(resp_pattern)
+                # ensure that the number of pulse and resp files match
+                if len(pulse_files) != len(resp_files):
+                    raise RuntimeError(
+                        "Mismatch in number of pulse and respiration physio files found."
+                    )
+                # build list of dicts
+                fp_out = []
+                for p_file, r_file in zip(pulse_files, resp_files):
+                    fp_out.append({"pulse": p_file, "resp": r_file})
+            else:
+                # for final physio, return single files
+                pattern = os.path.join(
+                    self.data_directory,
+                    base_dir,
+                    f"{self.subject}_task-{_task}_session{_session}_run{_run}_physio{extension}",
+                )
+                fp_out = glob(pattern)
+
+        elif file_modality == "fmri":
+            # get extension based on func_type
+            if func_type == "surface":
+                extension = ".dtseries.nii"
+            elif func_type == "volume":
+                extension = ".nii.gz"
+            # get base directory based on preproc_type
+            if preproc_type == "orig":
+                base_dir = "func/orig"
+            elif preproc_type == "final":
+                base_dir = "func/final"
+
+            # build glob pattern
+            pattern = os.path.join(
+                self.data_directory,
+                base_dir,
+                f"{self.subject}_task-{_task}_session{_session}_run{_run}{extension}",
+            )
+            fp_out = glob(pattern)
+        else:
+            raise ValueError("file_modality must be 'physio' or 'fmri'")
+
+        return fp_out
+
+    @staticmethod
+    def get_out_directory(fp: str) -> str:
+        """
+        Get the output directory for a specific file path.
+
+        Parameters
+        ----------
+        fp : str
+            The file path.
+
+        Returns
+        -------
+        str
+            The output directory path.
+        """
+        return str(Path(fp).parent)
+
+    def get_sessions_task(self, task: str) -> List[str]:
+        """
+        Get the sessions available for a specific task.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+
+        Returns
+        -------
+        list of str
+            A list of session identifiers.
+        """
+        # get sessions from task_runs dict
+        sessions = list(self.tasks_runs[task].keys())
+        return sessions
+
+    def get_session_event_files(
+        self, session: str, task: str, run: str | None = None, ped: str | None = None
+    ) -> list[tuple[str, str]] | list[str]:
+        """
+        Get the event files for a specific session and task.
+
+        Parameters
+        ----------
+        session : str
+            The session identifier.
+        task : str
+            The task identifier.
+        run : str, optional
+            The run identifier. If provided, only files for this run will be returned.
+        ped : str, optional
+            The phase encoding direction of the fMRI data. This parameter is not used
+            in the NSD dataset, as event files are not organized by phase encoding direction.
+            Kept for compatibility with other FileMapper classes.
+
+        Returns
+        -------
+        list of tuple of str | list of str
+            A list of onset and duration file path tuples (onset, duration) - for Euskalibur,
+            or a list of event file paths - for PAN.
+        """
+        raise NotImplementedError(
+            "Event file retrieval not implemented for NSD dataset."
+        )
+
+    def get_session_fmri_files(
+        self,
+        session: str,
+        task: str,
+        run: str | None = None,
+        ped: str | None = None,
+        desc: Literal["orig", "final"] = "orig",
+        extension: str = ".nii.gz",
+    ) -> list[str]:
+        """
+        Get the fMRI files for a specific session and task. Parameters are consistent
+        with FileMapperBids for API compatibility. However, the NSD dataset does not
+        follow BIDS format, so some parameters are not used and others repurposed.
+
+        Parameters
+        ----------
+        session : str
+            The session identifier.
+        task : str
+            The task identifier.
+        run : str, optional
+            The run identifier. If provided, only files for this run will be returned.
+        ped : str, optional
+            The phase encoding direction of the fMRI data. This parameter is not used
+            in the NSD dataset, as event files are not organized by phase encoding direction.
+            Kept for compatibility with other FileMapper classes.
+        desc : Literal['orig', 'final']
+            Whether to pull minimally processed ('orig') or fully processed ('final') files.
+            Defaults to 'orig'. This parameter is repurposed from description entity
+            filtering in BIDS datasets to indicate processing stage in NSD dataset.
+        extension : str
+            The file extension to filter files. Defaults to '.nii.gz' for
+            volumetric fMRI files. Use '.dtseries.nii' for surface fMRI files.
+
+        Returns
+        -------
+        list of str
+            A list of fMRI file paths.
+        """
+        # build path to minimally preprocessed or fully processed func directory
+        if desc == "orig":
+            func_dir = os.path.join(self.data_directory, "func/orig")
+        elif desc == "final":
+            func_dir = os.path.join(self.data_directory, "func/final")
+        else:
+            raise ValueError("desc must be 'orig' or 'final'")
+        # get runs for this session and task - NSD always multiple runs
+        runs = self.tasks_runs[task][session]
+        # construct file path pattern
+        filenames = []
+        for run in runs:
+            pattern = f"{self.subject}_task-{task}_session{session}_run{run}{extension}"
+            filenames.append(os.path.join(func_dir, pattern))
+        return filenames
+
+    def get_session_physio_files(
+        self,
+        session: str,
+        task: str,
+        run: str | None = None,
+        desc: Literal["orig", "final"] = "orig",
+    ) -> list[str] | list[dict[str, str]]:
+        """
+        Get the physiological file paths for a specific session and task. Parameters are consistent
+        with FileMapperBids for API compatibility. However, the NSD dataset does not
+        follow BIDS format, so some parameters are not used and others repurposed.
+
+        Note, respiratory and pulse data are stored separately in NSD dataset. If the desc = 'orig',
+        both files will be returned for each run as a list of dictionaries with keys 'resp' and 'pulse'.
+        Both signals are combined into a single physio file in the 'final' processing stage. If the desc='final', only a single
+        physio file will be returned for each run.
+
+        Parameters
+        ----------
+        session : str
+            The session identifier.
+        task : str
+            The task identifier.
+        run : str, optional
+            The run identifier. If provided, only files for this run will be returned.
+        desc : Literal["orig", "final"]
+            Whether to pull minimally processed ('orig') or fully processed ('final') files.
+            Defaults to 'orig'. This parameter is repurposed from description entity
+            filtering in BIDS datasets to indicate processing stage in NSD dataset.
+
+        Returns
+        -------
+        list of str | list[dict[str, str]]
+            A list of physiological file paths (desc='orig') or
+            a list of dictionaries with keys 'resp' and 'pulse' (desc='final').
+        """
+        # get build path to minimally preprocessed or fully processed physio directory
+        if desc == "orig":
+            physio_dir = os.path.join(self.data_directory, "physio/orig")
+        elif desc == "final":
+            physio_dir = os.path.join(self.data_directory, "physio/final")
+        else:
+            raise ValueError("desc must be 'orig' or 'final'")
+        # get runs for this session and task - NSD always multiple runs
+        runs = self.tasks_runs[task][session]
+        # construct file path pattern
+        filenames = []
+        for run in runs:
+            if desc == "orig":
+                resp_pattern = (
+                    f"{self.subject}_task-{task}_session{session}_run{run}_resp.tsv"
+                )
+                pulse_pattern = (
+                    f"{self.subject}_task-{task}_session{session}_run{run}_pulse.tsv"
+                )
+                filenames.append(
+                    {
+                        "resp": os.path.join(physio_dir, resp_pattern),
+                        "pulse": os.path.join(physio_dir, pulse_pattern),
+                    }
+                )
+            elif desc == "final":
+                physio_pattern = (
+                    f"{self.subject}_task-{task}_session{session}_run{run}_physio.tsv"
+                )
+                filenames.append(os.path.join(physio_dir, physio_pattern))
+
+        return filenames
+
+    def get_subject_mask(self):
+        """
+        Get the subject functional mask file path. NSD dataset provides a brain mask for each subject.
+
+        Returns
+        -------
+        str
+            The file path to the subject's brain mask.
+        """
+        mask_path = os.path.join(
+            self.data_directory, "masks", f"{self.subject}_func1pt8mm_brain_mask.nii.gz"
+        )
+        if not os.path.exists(mask_path):
+            raise RuntimeError(
+                f"Mask file not found for subject '{self.subject}' at path '{mask_path}'."
+            )
+        return mask_path
+
+    def _parse_func_file_list_components(
+        self, file_list: list[str]
+    ) -> list[dict[str, str]]:
+        """
+        Take the results of a glob search in the functional directory and parse out the subject, session, task, and
+        run components of the file paths.
+
+        Expected functional file path format:
+        <subject>_task-<task>_session<session>_run<run>.nii.gz
+        """
+        fp_components = []
+        for fp in file_list:
+            # first parse by underscores to separate entities
+            components = fp.split("_")
+            # get subject
+            subject = components[0]
+            # get task
+            task = components[1].split("-")[1]
+            # get session
+            session = components[2].split("session")[1]
+            # get run
+            run = components[3].split("run")[1].split(".nii.gz")[0]
+            fp_components.append(
+                {"subject": subject, "task": task, "session": session, "run": run}
+            )
+            # check that subject matches the FileMapper's subject
+            if subject != self.subject:
+                raise ValueError(
+                    f"File path '{fp}' subject '{subject}' does not match FileMapper subject '{self.subject}'."
+                )
+            # check that task is valid for the subject
+            if task not in self.tasks:
+                raise ValueError(
+                    f"File path '{fp}' task '{task}' is not valid for subject '{self.subject}'."
+                )
+            # try to convert session and run to an integer to check that they are valid integers
+            try:
+                session_int = int(session)
+                run_int = int(run)
+            except ValueError:
+                raise ValueError(
+                    f"File path '{fp}' session '{session}' or run '{run}' is not a valid integer."
+                )
+            # check that session and run are present
+            if not all([session, run]):
+                raise ValueError(f"File path '{fp}' does not contain a session or run.")
+        return fp_components
+
+
 def get_dataset_subjects(dataset: str) -> List[str]:
     """
     Get the list of available subjects for a specific dataset.
@@ -519,25 +1112,36 @@ def get_dataset_subjects(dataset: str) -> List[str]:
     Parameters
     ----------
     dataset : str
-        The dataset name. Options are 'euskalibur'.
+        The dataset name. Options are 'euskalibur', 'pan', or 'nsd'.
 
     Returns
     -------
     list of str
-        A list of subject identifiers (EUSKALIBUR)
+        A list of subject identifiers
     """
     if dataset == "euskalibur":
-        # The BIDSLayout initialization can be slow, especially for large datasets
-        with warnings.catch_warnings():
-            # suppress warnings about soon-to-be-deprecated ignore parameter
-            warnings.simplefilter("ignore")
-            if IS_DERIVED:
-                layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, is_derivative=True)
-            else:
-                layout = BIDSLayout(DATA_DIRECTORY_EUSKALIBUR, derivatives=True)
+        if IS_DERIVED:
+            layout = BIDSLayout(
+                DATA_DIRECTORY_EUSKALIBUR,
+                is_derivative=True,
+            )
+        else:
+            layout = BIDSLayout(
+                DATA_DIRECTORY_EUSKALIBUR,
+                derivatives=True,
+            )
         subjects = layout.get_subjects()
+    elif dataset == "pan":
+        layout = BIDSLayout(
+            DATA_DIRECTORY_PAN,
+            is_derivative=True,
+            derivatives=True,
+        )
+        subjects = layout.get_subjects()
+    elif dataset == "nsd":
+        subjects = FileMapperNSD.available_subjects
     else:
-        raise ValueError("Dataset must be 'euskalibur'")
+        raise ValueError("Dataset must be 'euskalibur', 'pan', or 'nsd'.")
 
     return subjects
 
