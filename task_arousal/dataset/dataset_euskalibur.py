@@ -10,7 +10,7 @@ import nibabel as nib
 import numpy as np
 
 from task_arousal.constants import MASK_EUSKALIBUR
-from task_arousal.io.file import FileMapper
+from task_arousal.io.file import FileMapperBids
 from .dataset_utils import (
     load_physio as _load_physio,
     load_fmri as _load_fmri,
@@ -68,7 +68,7 @@ class DatasetEuskalibur:
         """
         self.subject = subject
         # map file paths associated to subject
-        self.file_mapper = FileMapper(dataset="euskalibur", subject=subject)
+        self.file_mapper = FileMapperBids(dataset="euskalibur", subject=subject)
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
         # get available sessions from mapper
