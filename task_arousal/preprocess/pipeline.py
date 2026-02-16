@@ -29,8 +29,10 @@ import pandas as pd
 from task_arousal.constants import (
     MASK_EUSKALIBUR,  # brain mask for EuskalIBUR
     MASK_PAN,  #  brain mask for PAN
+    PHYSIO_COLUMNS_EUSKALIBUR,
     TR_EUSKALIBUR,  # TR for EuskalIBUR
     TR_PAN,  # TR for PAN
+    TR_NSD,  # TR for NSD
     SLICE_TIMING_REF,  # slice timing reference
 )
 
@@ -40,16 +42,19 @@ from task_arousal.constants import (
     HIGHPASS,  # high-pass filter cutoff frequency
     FWHM_EUSKALIBUR,  # smoothing FWHM for EuskalIBUR
     FWHM_PAN,  # smoothing FWHM for PAN
-    PHYSIO_COLUMNS_EUSKALIBUR,  # physio columns to extract for EuskalIBUR
+    FWHM_NSD,  # smoothing FWHM for NSD
     PHYSIO_RESAMPLE_F,  # physio resample frequency
     SURFACE_LH,  # left hemisphere surface template
     SURFACE_RH,  # right hemisphere surface template
 )
 
-from task_arousal.io.file import FileMapperBids
+from task_arousal.io.file import FileMapperBids, FileMapperNSD
 from task_arousal.preprocess.components.physio import physio_pipeline
 from task_arousal.preprocess.components.volume import func_volume_pipeline
 from task_arousal.preprocess.components.surface import func_surface_pipeline
+
+# Define a type for the file mapper, which can be either BIDS or NSD
+FileMapper = FileMapperBids | FileMapperNSD
 
 
 class PreprocessingPipeline:
@@ -59,7 +64,7 @@ class PreprocessingPipeline:
 
     def __init__(
         self,
-        dataset: Literal["euskalibur", "pan"],
+        dataset: Literal["euskalibur", "pan", "nsd"],
         subject: str,
         func_type: Literal["volume", "surface"] = "volume",
     ) -> None:
@@ -67,7 +72,7 @@ class PreprocessingPipeline:
 
         Parameters
         ----------
-            dataset (Literal['euskalibur', 'pan']): The dataset identifier.
+            dataset (Literal['euskalibur', 'pan', 'nsd']): The dataset identifier.
             subject (str): The subject identifier.
             func_type (Literal['volume', 'surface'], optional): The type of functional data. Defaults to "volume".
         """
@@ -76,8 +81,10 @@ class PreprocessingPipeline:
         self.func_type: Literal["volume", "surface"] = func_type
 
         # map file paths associated to subject
-        if dataset in ["euskalibur", "pan"]:
-            self.file_mapper = FileMapperBids(dataset, subject)
+        if dataset in ("euskalibur", "pan"):
+            self.file_mapper = FileMapperBids(dataset=dataset, subject=subject)
+        elif dataset == "nsd":
+            self.file_mapper = FileMapperNSD(subject)
         else:
             raise ValueError(f"Dataset '{dataset}' is not supported.")
         # get available tasks from mapper
@@ -107,10 +114,10 @@ class PreprocessingPipeline:
             Whether to skip physiological preprocessing. Defaults to False.
         """
         # pan has no physio data
-        if self.dataset == "pan":
+        if self.dataset in ["pan", "nsd"]:
             if skip_physio:
                 warnings.warn(
-                    "Skipping physiological preprocessing for PAN dataset has no effect as there is no physio data."
+                    "Skipping physiological preprocessing for this dataset has no effect - no physio data."
                 )
             skip_physio = True
         # check that not both func and physio are skipped
@@ -120,7 +127,7 @@ class PreprocessingPipeline:
             )
         if skip_func and verbose:
             print(f"Skipping fMRI preprocessing for subject '{self.subject}'...")
-        if skip_physio and verbose and not self.dataset == "pan":
+        if skip_physio and verbose and self.dataset not in ["pan", "nsd"]:
             print(
                 f"Skipping physiological preprocessing for subject '{self.subject}'..."
             )
@@ -145,6 +152,33 @@ class PreprocessingPipeline:
                     f"and sessions '{sessions if sessions is not None else 'all'}'..."
                 )
 
+            # Resolve dataset-specific parameters once for this task.
+            if self.dataset == "euskalibur":
+                fwhm = FWHM_EUSKALIBUR
+                tr = TR_EUSKALIBUR
+                mask = MASK_EUSKALIBUR
+                resample = False
+                remove_dummy = True
+            elif self.dataset == "pan":
+                fwhm = FWHM_PAN
+                tr = TR_PAN
+                mask = MASK_PAN
+                resample = True
+                remove_dummy = True
+            elif self.dataset == "nsd":
+                if not isinstance(self.file_mapper, FileMapperNSD):
+                    raise TypeError(
+                        "NSD dataset requires FileMapperNSD, got "
+                        f"{type(self.file_mapper)}"
+                    )
+                fwhm = FWHM_NSD
+                tr = TR_NSD
+                mask = self.file_mapper.get_subject_mask()
+                resample = False
+                remove_dummy = True
+            else:
+                raise ValueError(f"Unknown dataset: {self.dataset}")
+
             # functional MRI preprocessing
             if not skip_func:
                 # get fmri files for task
@@ -156,21 +190,6 @@ class PreprocessingPipeline:
                     if verbose:
                         print(f"Preprocessing fMRI file: {fmri_file}")
 
-                    # get metadata based on dataset
-                    if self.dataset == "euskalibur":
-                        fwhm = FWHM_EUSKALIBUR
-                        tr = TR_EUSKALIBUR
-                        mask = MASK_EUSKALIBUR
-                        resample = False
-                        remove_dummy = True
-                    elif self.dataset == "pan":
-                        fwhm = FWHM_PAN
-                        tr = TR_PAN
-                        mask = MASK_PAN
-                        resample = True
-                        remove_dummy = True
-                    else:
-                        raise ValueError(f"Unknown dataset: {self.dataset}")
                     # Apply the functional MRI preprocessing pipeline
                     if self.func_type == "volume":
                         fmri_proc = func_volume_pipeline(
@@ -199,8 +218,13 @@ class PreprocessingPipeline:
                     # Write out the preprocessed fMRI file
                     self.write_out_fmri_file(fmri_proc, fmri_file)
 
-            # physio preprocessing pipeline
-            if not skip_physio:
+            # physio preprocessing pipeline (EuskalIBUR only)
+            if self.dataset == "euskalibur" and not skip_physio:
+                if not isinstance(self.file_mapper, FileMapperBids):
+                    raise TypeError(
+                        "EuskalIBUR dataset requires FileMapperBids, got "
+                        f"{type(self.file_mapper)}"
+                    )
                 # get physio files (and JSON sidecars) for task
                 physio_files = self.file_mapper.get_physio_files(
                     task_proc, return_json=True, sessions=sessions
@@ -242,7 +266,7 @@ class PreprocessingPipeline:
                         physio_fp=physio_file[0],
                         physio_json=physio_file[1],
                         fmri_fp=matching_fmri_file,
-                        tr=tr,  # type: ignore
+                        tr=tr,
                         fmri_dummy_n=DUMMY_VOLUMES,
                         highpass=HIGHPASS,
                         physio_resample_f=PHYSIO_RESAMPLE_F,
@@ -256,7 +280,7 @@ class PreprocessingPipeline:
 
             if verbose:
                 print(
-                    f"Finished processing task '{task}' for subject '{self.subject}'."
+                    f"Finished processing task '{task_proc}' for subject '{self.subject}'."
                 )
 
     def write_out_fmri_file(
@@ -274,7 +298,19 @@ class PreprocessingPipeline:
             The original file path
         """
         # get output directory from original file path
-        output_dir = self.file_mapper.get_out_directory(file_orig)
+        # for the Euskalbur and PAND datasets, preprocessed files are saved in the
+        # same directory as original files. For NSD, preprocessed files are saved in a separate directory.
+        if self.dataset in ["euskalibur", "pan"]:
+            output_dir = self.file_mapper.get_out_directory(file_orig)
+        elif self.dataset == "nsd":
+            if not isinstance(self.file_mapper, FileMapperNSD):
+                raise TypeError(
+                    f"NSD dataset requires FileMapperNSD, got {type(self.file_mapper)}"
+                )
+            output_dir = self.file_mapper.data_directory + "/func/final"
+        else:
+            raise ValueError(f"Unknown dataset: {self.dataset}")
+
         # get file name from original file path
         file_orig_name = os.path.basename(file_orig)
 
@@ -338,7 +374,17 @@ class PreprocessingPipeline:
         # convert to dataframe
         physio_df = pd.DataFrame(physio_dict)
         # get output directory from original file path
-        output_dir = self.file_mapper.get_out_directory(file_orig)
+        if self.dataset in ["euskalibur", "pan"]:
+            output_dir = self.file_mapper.get_out_directory(file_orig)
+        elif self.dataset == "nsd":
+            if not isinstance(self.file_mapper, FileMapperNSD):
+                raise TypeError(
+                    f"NSD dataset requires FileMapperNSD, got {type(self.file_mapper)}"
+                )
+            output_dir = self.file_mapper.data_directory + "/physio/final"
+        else:
+            raise ValueError(f"Unknown dataset: {self.dataset}")
+
         # get file name from original file path
         file_orig_name = os.path.basename(file_orig)
         # strip 'physio.tsv.gz' from file name

@@ -961,11 +961,19 @@ class FileMapperNSD:
         else:
             raise ValueError("desc must be 'orig' or 'final'")
         # get runs for this session and task - NSD always multiple runs
-        runs = self.tasks_runs[task][session]
+        if run is not None:
+            runs = [run]
+        else:
+            runs = self.tasks_runs[task][session]
         # construct file path pattern
         filenames = []
         for run in runs:
-            pattern = f"{self.subject}_task-{task}_session{session}_run{run}{extension}"
+            if desc == "orig":
+                pattern = (
+                    f"{self.subject}_task-{task}_session{session}_run{run}{extension}"
+                )
+            elif desc == "final":
+                pattern = f"{self.subject}_task-{task}_session{session}_run{run}_desc-preprocfinal{extension}"
             filenames.append(os.path.join(func_dir, pattern))
         return filenames
 
@@ -1048,7 +1056,7 @@ class FileMapperNSD:
             The file path to the subject's brain mask.
         """
         mask_path = os.path.join(
-            self.data_directory, "masks", f"{self.subject}_func1pt8mm_brain_mask.nii.gz"
+            self.data_directory, "mask", f"{self.subject}_func1pt8mm_brain_mask.nii.gz"
         )
         if not os.path.exists(mask_path):
             raise RuntimeError(
@@ -1068,8 +1076,10 @@ class FileMapperNSD:
         """
         fp_components = []
         for fp in file_list:
+            # get filename from file path
+            filename = os.path.basename(fp)
             # first parse by underscores to separate entities
-            components = fp.split("_")
+            components = filename.split("_")
             # get subject
             subject = components[0]
             # get task
@@ -1087,7 +1097,7 @@ class FileMapperNSD:
                     f"File path '{fp}' subject '{subject}' does not match FileMapper subject '{self.subject}'."
                 )
             # check that task is valid for the subject
-            if task not in self.tasks:
+            if task not in self.available_tasks:
                 raise ValueError(
                     f"File path '{fp}' task '{task}' is not valid for subject '{self.subject}'."
                 )

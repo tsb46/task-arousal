@@ -11,6 +11,7 @@ load_dotenv()
 # path to data directory
 DATA_DIRECTORY_EUSKALIBUR = os.getenv("DATA_DIRECTORY_EUSKALIBUR", "data/euskalibur")
 DATA_DIRECTORY_PAN = os.getenv("DATA_DIRECTORY_PAN", "data/pan")
+DATA_DIRECTORY_NSD = os.getenv("DATA_DIRECTORY_NSD", "data/nsd")
 # flag indicating if the data should be searched in the 'derivatives' directory
 IS_DERIVED = os.getenv("IS_DERIVED", "false").lower() == "true"
 
@@ -26,6 +27,7 @@ SURFACE_RH = "templates/fsLR_den-32k_hemi-R_inflated.surf.gii"
 # TR (Repetition Time) in seconds
 TR_EUSKALIBUR = 1.5
 TR_PAN = 1.355
+TR_NSD = 1.333
 
 
 # expected columns in event dataframe
@@ -42,6 +44,7 @@ HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
 FWHM_EUSKALIBUR = 4  # in mm
 FWHM_PAN = 4  # in mm
+FWHM_NSD = 3  # in mm
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = [
     "respiratory_effort",
