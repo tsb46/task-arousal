@@ -12,6 +12,7 @@ dependencies = [
     "nibabel>=5.3.2",
     "nilearn>=0.12.0",
     "nipype>=1.10.0",
+    "nsdcode",
     "pandas>=2.3.2",
     "patsy>=1.0.1",
     "pybids==0.19.0",
@@ -20,6 +21,9 @@ dependencies = [
 ]
 [tool.setuptools.packages.find]
 where = ["task_arousal"]
+
+[tool.uv.sources]
+nsdcode = { git = "https://github.com/cvnlab/nsdcode.git" }
 
 [dependency-groups]
 dev = [
