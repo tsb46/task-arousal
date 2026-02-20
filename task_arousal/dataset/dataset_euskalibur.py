@@ -79,6 +79,8 @@ class DatasetEuskalibur:
         assert isinstance(self.mask, nib.nifti1.Nifti1Image), (
             "Mask is not a Nifti1Image."
         )
+        # initialize surface template attribute for later use in surface data loading and to_img conversion
+        self.surface_template = None
 
     def load_data(
         self,
