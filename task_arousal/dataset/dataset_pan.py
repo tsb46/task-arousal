@@ -5,7 +5,7 @@ a given subject in the Precision Targeting of Association Networks (PAN) dataset
 
 import json
 
-from typing import List
+from typing import List, Literal
 
 import pandas as pd
 import nibabel as nib
@@ -51,6 +51,7 @@ class DatasetPan:
     def load_data(
         self,
         task: str,
+        func_type: Literal["volume", "surface"] = "volume",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
@@ -66,6 +67,9 @@ class DatasetPan:
         ----------
         task : str
             The task identifier.
+        func_type : Literal["volume", "surface"], optional
+            The type of functional data to load. Default is "volume". Surface space is only available for the EuskalIBUR dataset, parameter
+            is kept for API consistency, but if "surface" is selected for PAN, an error will be raised.
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
@@ -86,6 +90,9 @@ class DatasetPan:
         verbose : bool, optional
             Whether to print progress messages. Default is True.
         """
+        # if func_type is surface, raise error since PAN dataset does not have surface data
+        if func_type == "surface":
+            raise ValueError("Surface space is not available for the PAN dataset.")
         # if task is not None, ensure it's an available task
         if task not in self.tasks:
             raise ValueError(
@@ -270,10 +277,14 @@ class DatasetPan:
             verbose=verbose,
         )
 
-    def to_img(self, fmri_data: np.ndarray) -> nib.nifti1.Nifti1Image:
+    def to_img(
+        self, fmri_data: np.ndarray, func_type: Literal["volume", "surface"]
+    ) -> nib.nifti1.Nifti1Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
+        if func_type == "surface":
+            raise ValueError("Surface space is not available for the PAN dataset.")
         return _to_img(fmri_data, mask_img=self.mask)  # type: ignore
 
 
