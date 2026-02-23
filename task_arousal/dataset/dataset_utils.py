@@ -2,7 +2,7 @@
 Shared dataset loading utilities used by subject-level loaders across datasets.
 """
 
-from typing import Any, TypedDict
+from typing import Any, TypedDict, Literal
 
 import numpy as np
 import pandas as pd
@@ -52,15 +52,16 @@ def load_physio(fp: str, normalize: bool = False) -> pd.DataFrame:
 
 def load_fmri(
     fp: str,
-    mask_img: nib.nifti1.Nifti1Image,
+    func_type: Literal["volume", "surface"] = "volume",
+    mask_img: nib.nifti1.Nifti1Image | None = None,
     normalize: bool = False,
-    convert_to_2d: bool = True,
     bandpass: tuple[float, float] | None = None,
     tr: float | None = None,
     verbose: bool = False,
-) -> np.ndarray | nib.nifti1.Nifti1Image:
+):
     """
-    Load an fMRI NIfTI and optionally mask to 2D (time x voxels) with per-voxel z-scoring.
+    Load fMRI data from NIfTI or CIFTI file, optionally masking to 2D (time x voxels/vertices)
+    with per-voxel/vertex z-scoring.
 
     Parameters
     ----------
@@ -69,9 +70,7 @@ def load_fmri(
     mask_img : nib.nifti1.Nifti1Image
         Brain mask in the same space as fp.
     normalize : bool
-        If convert_to_2d, z-score each voxel across time (axis=0 after masking).
-    convert_to_2d : bool
-        If False, return nib.Nifti1Image unchanged.
+        If True, z-score each voxel across time (axis=0 after masking).
     bandpass : tuple of float | None
         If provided, apply a Butterworth bandpass filter with these (low, high) frequencies in Hz.
     tr : float | None
@@ -81,28 +80,23 @@ def load_fmri(
 
     Returns
     -------
-    np.ndarray | nib.Nifti1Image
-        2D array (time x voxels) if convert_to_2d else the 4D image.
+    np.ndarray
+        2D array (time x voxels)
     """
-    img = nib.nifti1.load(fp)
-    # check img type
-    if not isinstance(img, nib.nifti1.Nifti1Image):
-        raise ValueError("Expected Nifti1Image")
+    if func_type == "volume":
+        if mask_img is None:
+            raise ValueError("mask_img must be provided for volume fMRI data.")
+        data_2d = _load_volume(fp, mask_img)
+    elif func_type == "surface":
+        data_2d = _load_surface(fp)
+    else:
+        raise ValueError(f"Unsupported func_type: {func_type}")
 
     # if bandpass filtering is requested, check tr is provided
     if bandpass is not None:
         if tr is None:
             raise ValueError("tr must be provided when bandpass filtering.")
 
-    # if no conversion to 2d, return image early
-    if not convert_to_2d:
-        if verbose:
-            print(
-                "convert_to_2d is False; returning 4D NIfTI image without masking and preprocessing."
-            )
-        return img
-
-    data_2d = apply_mask(img, mask_img)  # shape: time x voxels
     # if bandpass filtering is requested, apply it now
     if bandpass is not None:
         assert tr is not None  # for type checker
@@ -134,7 +128,168 @@ def load_fmri(
     return data_2d
 
 
-def to_4d(
+def _load_volume(
+    fp: str,
+    mask_img: nib.nifti1.Nifti1Image,
+) -> np.ndarray:
+    """
+    Load an fMRI NIfTI and optionally mask to 2D (time x voxels) with per-voxel z-scoring.
+
+    Parameters
+    ----------
+    fp : str
+        NIfTI file path.
+    mask_img : nib.nifti1.Nifti1Image
+        Brain mask in the same space as fp.
+
+    Returns
+    -------
+    np.ndarray
+        2D array (time x voxels).
+    """
+    img = nib.nifti1.load(fp)
+    # check img type
+    if not isinstance(img, nib.nifti1.Nifti1Image):
+        raise ValueError("Expected Nifti1Image")
+    # apply mask to get 2D array
+    data_2d = apply_mask(img, mask_img)  # shape: time x voxels
+    return data_2d
+
+
+def _load_surface(fp: str) -> np.ndarray:
+    """
+    Load a surface fMRI CIFTI file and return as 2D array (time x vertices).
+
+    Parameters
+    ----------
+    fp : str
+        CIFTI file path.
+
+    Returns
+    -------
+    np.ndarray
+        2D array (time x vertices).
+    """
+    from nibabel.cifti2.cifti2 import Cifti2Image
+    from nibabel.cifti2.cifti2_axes import SeriesAxis
+
+    img = Cifti2Image.from_filename(fp)
+    data = np.asanyarray(img.dataobj)
+    if data.ndim != 2:
+        raise ValueError(f"Expected dtseries to be 2D, got shape {data.shape}")
+    # Identify time axis (usually axis 0 for dtseries)
+    ax0 = img.header.get_axis(0)
+    ax1 = img.header.get_axis(1)
+    time_axis = (
+        0 if isinstance(ax0, SeriesAxis) else 1 if isinstance(ax1, SeriesAxis) else None
+    )
+    if time_axis is None:
+        raise ValueError("Could not identify time axis in CIFTI file.")
+    if time_axis == 1:
+        data = data.T  # transpose to time x vertices
+    return data
+
+
+def to_img(
+    fmri_2d: np.ndarray,
+    func_type: Literal["volume", "surface"] = "volume",
+    mask_img: nib.nifti1.Nifti1Image | None = None,
+    surface_template: str | nib.cifti2.cifti2.Cifti2Image | None = None,
+) -> nib.nifti1.Nifti1Image | nib.cifti2.cifti2.Cifti2Image:
+    """
+    Convert a 2D fMRI array (time x voxels/vertices) back to image format -
+    NIfTI for volume data, CIFTI for surface data.
+
+    Parameters
+    ----------
+    fmri_2d : np.ndarray
+        2D fMRI array (time x voxels/vertices).
+    func_type : Literal["volume", "surface"]
+        Type of functional data.
+    mask_img : nib.nifti1.Nifti1Image | None
+        Brain mask, required for volume data.
+    surface_template : str | nib.cifti2.cifti2.Cifti2Image | None
+        Reference dtseries used to copy the BrainModelAxis (grayordinates definition) and
+        default time-axis metadata (TR/start) for surface data.
+
+    Returns
+    -------
+    nib.nifti1.Nifti1Image | nib.cifti2.cifti2.Cifti2Image
+        Reconstructed fMRI image.
+    """
+    if func_type == "volume":
+        if mask_img is None:
+            raise ValueError("mask_img must be provided for volume fMRI data.")
+        return _to_img_volume(fmri_2d, mask_img)
+    elif func_type == "surface":
+        return _to_img_surface(fmri_2d, surface_template=surface_template)
+    else:
+        raise ValueError(f"Unsupported func_type: {func_type}")
+
+
+def _to_img_surface(
+    fmri_2d: np.ndarray,
+    surface_template: str | nib.cifti2.cifti2.Cifti2Image | None,
+) -> nib.cifti2.cifti2.Cifti2Image:
+    """
+    Convert a 2D fMRI array (time x grayordinates) back to a CIFTI dtseries image.
+
+    Notes
+    -----
+    A CIFTI dtseries needs a BrainModelAxis that defines the grayordinates (surface vertices
+    and/or subcortical voxels). This information cannot be reconstructed from `fmri_2d` alone,
+    so we require a `surface_template` dtseries (or loaded Cifti2Image) to copy the axis.
+    """
+    from nibabel.cifti2.cifti2 import Cifti2Image, Cifti2Header
+    from nibabel.cifti2.cifti2_axes import BrainModelAxis, SeriesAxis
+
+    if surface_template is None:
+        raise ValueError(
+            "surface_template must be provided for surface fMRI data so we can copy the BrainModelAxis. "
+            "Pass a dtseries path (e.g., the original fMRIPrep dtseries) or a loaded Cifti2Image."
+        )
+
+    if isinstance(surface_template, str):
+        template_img = Cifti2Image.from_filename(surface_template)
+    elif isinstance(surface_template, Cifti2Image):
+        template_img = surface_template
+    else:
+        raise TypeError(
+            f"surface_template must be a file path or Cifti2Image, got {type(surface_template)}"
+        )
+
+    if fmri_2d.ndim != 2:
+        raise ValueError(
+            f"fmri_2d must be 2D (time x grayordinates), got shape {fmri_2d.shape}"
+        )
+
+    ax0 = template_img.header.get_axis(0)
+    ax1 = template_img.header.get_axis(1)
+    if not isinstance(ax0, SeriesAxis):
+        raise ValueError(
+            "surface_template does not look like a dtseries: axis 0 is not a SeriesAxis (time)."
+        )
+    if not isinstance(ax1, BrainModelAxis):
+        raise ValueError(
+            "surface_template does not look like a dtseries: axis 1 is not a BrainModelAxis (grayordinates)."
+        )
+
+    n_timepoints, n_grayordinates = fmri_2d.shape
+    if int(ax1.size) != int(n_grayordinates):
+        raise ValueError(
+            f"fmri_2d has {n_grayordinates} grayordinates, but template BrainModelAxis has {ax1.size}."
+        )
+
+    # Preserve TR/start from the template, update only the number of timepoints.
+    new_time_axis = SeriesAxis(
+        start=float(ax0.start), step=float(ax0.step), size=int(n_timepoints)
+    )
+    new_header = Cifti2Header.from_axes((new_time_axis, ax1))
+    data = np.asarray(fmri_2d, dtype=np.float32)
+    return Cifti2Image(data, header=new_header, nifti_header=template_img.nifti_header)
+
+
+def _to_img_volume(
     fmri_2d: np.ndarray, mask_img: nib.nifti1.Nifti1Image
 ) -> nib.nifti1.Nifti1Image:
     """
@@ -142,6 +297,6 @@ def to_4d(
     """
     fmri_4d_img = unmask(fmri_2d, mask_img)
     assert isinstance(fmri_4d_img, nib.nifti1.Nifti1Image), (
-        "to_4d did not return a Nifti1Image."
+        "to_img did not return a Nifti1Image."
     )
     return fmri_4d_img

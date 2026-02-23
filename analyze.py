@@ -83,7 +83,9 @@ TASKS_EVENT_PAN = [
 ]
 
 # define analyses to perform
-ANALYSES = ["dlm_physio", "dlm_event", "pca", "bilinear"]
+# ANALYSES = ["dlm_physio", "dlm_event", "pca", "bilinear"]
+ANALYSES = ["dlm_physio", "dlm_event", "pca"]
+
 
 # define Dataset type
 Dataset = DatasetEuskalibur | DatasetPan
@@ -94,6 +96,7 @@ def main(
     subject: str | None,
     analysis: str | None,
     task: str | None,
+    space: Literal["surface", "volume"] = "volume",
 ) -> None:
     """
     Perform full analysis pipeline on selected subject
@@ -108,7 +111,11 @@ def main(
         Type of analysis to perform
     task : str | None
         Task to perform analysis on
+    space : Literal["surface", "volume"]
+        Space to write output in (surface or volume)
     """
+    if space == "surface" and dataset != "euskalibur":
+        raise ValueError("Surface space is only available for the EuskalIBUR dataset.")
     # initialize dataset loader
     if dataset == "euskalibur":
         if subject is None:
@@ -174,17 +181,19 @@ def main(
             print(
                 f"Loading concatenated data for dataset {dataset}, subject {_subject}, task {task}"
             )
-            data: DatasetLoad = ds.load_data(task=task, concatenate=True)  # type: ignore
+            data: DatasetLoad = ds.load_data(
+                task=task, func_type=space, concatenate=True
+            )  # type: ignore
 
             # perform PCA analysis
             if "pca" in _analysis:
-                _pca(dataset, data, ds, _subject, task)
+                _pca(dataset, data, ds, _subject, task, space)
                 print(
                     f"PCA analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
             # perform DLM analysis with physiological regressors for tasks with physio signals
             if "dlm_physio" in _analysis and physio_labels is not None:
-                _dlm_physio(dataset, data, ds, tr, physio_labels, _subject, task)
+                _dlm_physio(dataset, data, ds, tr, physio_labels, _subject, task, space)
                 print(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
@@ -195,11 +204,13 @@ def main(
             print(
                 f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event and bilinear regression analyses"
             )
-            data: DatasetLoad = ds.load_data(task=task, concatenate=False)  # type: ignore
+            data: DatasetLoad = ds.load_data(
+                task=task, func_type=space, concatenate=False
+            )  # type: ignore
 
             if "dlm_event" in _analysis:
                 # perform DLM analysis with event regressors
-                _dlm_event(dataset, data, ds, tr, _subject, task)
+                _dlm_event(dataset, data, ds, tr, _subject, task, space)
                 print(
                     f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
@@ -214,6 +225,7 @@ def main(
                     gm_mask=mask_gm,
                     subject=_subject,
                     task=task,
+                    space=space,
                 )
                 print(
                     f"Bilinear regression analysis complete for dataset {dataset}, subject {_subject}, task {task}"
@@ -221,7 +233,13 @@ def main(
 
 
 def _dlm_event(
-    dataset: str, data: DatasetLoad, ds: Dataset, tr: float, subject: str, task: str
+    dataset: str,
+    data: DatasetLoad,
+    ds: Dataset,
+    tr: float,
+    subject: str,
+    task: str,
+    space: Literal["volume", "surface"],
 ) -> None:
     """
     Perform Distributed Lag Model (DLM) analysis with event regressors
@@ -241,6 +259,8 @@ def _dlm_event(
         Subject identifier
     task : str
         Task identifier
+    space : Literal["volume", "surface"]
+        Space to write output in (surface or volume)
     """
     print(
         f"Performing DLM with event regressors on dataset {dataset}, subject {subject}, task {task}"
@@ -269,10 +289,10 @@ def _dlm_event(
     # loop through conditions and write predicted functional time courses to nifti files
     for condition in conditions:
         dlm_eval = dlm.evaluate(trial=condition)
-        pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
-        nib.nifti1.save(
+        pred_func_img = ds.to_img(dlm_eval.pred_outcome, func_type=space)
+        nib.save(  # type: ignore
             pred_func_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}.nii.gz",
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
         )
         # write dlm metadata (including betas, t-stats, etc.) to pickle file
         pickle.dump(
@@ -293,6 +313,7 @@ def _bilinear_regression(
     gm_mask: str,
     subject: str,
     task: str,
+    space: Literal["volume", "surface"],
 ) -> None:
     """
     Perform Bilinear Regression analysis on fMRI data and save results to files
@@ -318,6 +339,8 @@ def _bilinear_regression(
         Subject identifier
     task : str
         Task identifier
+    space : Literal["volume", "surface"]
+        Space to write output in (surface or volume)
     """
     # get task conditions
     if dataset == "euskalibur":
@@ -363,10 +386,10 @@ def _bilinear_regression(
         )
         cap_res = cap_model.detect(data_rest["fmri"][0])
         # write out CAP spatial maps to nifti file
-        cap_maps_4d = ds.to_4d(cap_res.cap_maps)
-        nib.nifti1.save(
+        cap_maps_4d = ds.to_img(cap_res.cap_maps, func_type=space)
+        nib.save(  # type: ignore
             cap_maps_4d,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_maps.nii.gz",
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_maps{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
         )
         # write out CAP metadata to pickle file
         pickle.dump(
@@ -420,6 +443,7 @@ def _dlm_physio(
     physio_labels: list[str],
     subject: str,
     task: str,
+    space: Literal["volume", "surface"],
 ) -> None:
     """
     Perform Distributed Lag Model (DLM) analysis with physiological regressors
@@ -441,6 +465,8 @@ def _dlm_physio(
         Subject identifier
     task : str
         Task identifier
+    space : Literal["volume", "surface"]
+        Space to write output in (surface or volume)
     """
     print(
         f"Performing DLM with physiological regressors on subject {subject}, task {task}"
@@ -460,10 +486,10 @@ def _dlm_physio(
         # estimate functional time courses at each voxel to lagged physio signal
         dlm_eval = dlm.evaluate()
         # write predicted functional time courses to nifti file
-        pred_func_img = ds.to_4d(dlm_eval.pred_outcome)
-        nib.nifti1.save(
+        pred_func_img = ds.to_img(dlm_eval.pred_outcome, func_type=space)
+        nib.save(  # type: ignore
             pred_func_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}.nii.gz",
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
         )
 
         # write dlm metadata to pickle file
@@ -477,7 +503,12 @@ def _dlm_physio(
 
 
 def _pca(
-    dataset: str, data: DatasetLoad, ds: Dataset, subject: str | None, task: str
+    dataset: str,
+    data: DatasetLoad,
+    ds: Dataset,
+    subject: str | None,
+    task: str,
+    space: Literal["volume", "surface"],
 ) -> None:
     """
     Perform PCA decomposition on fMRI data and save results to files
@@ -494,6 +525,8 @@ def _pca(
         Subject identifier
     task : str
         Task identifier
+    space : Literal["volume", "surface"]
+        Space to write output in (surface or volume)
     """
     print(f"Performing PCA on dataset {dataset}, subject {subject}, task {task}")
     # estimate PCA with 10 components
@@ -501,10 +534,10 @@ def _pca(
     # run PCA decomposition
     pca_results = pca.decompose(data["fmri"][0])
     # write loadings to nifti file
-    pca_loadings = ds.to_4d(pca_results.loadings.T)
-    nib.nifti1.save(
+    pca_loadings = ds.to_img(pca_results.loadings.T, func_type=space)
+    nib.save(  # type: ignore
         pca_loadings,
-        f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_pca_loadings.nii.gz",
+        f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_pca_loadings{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
     )
     # write pca metadata (including pc scores, exp var, etc.) to pickle file
     pickle.dump(
@@ -554,6 +587,16 @@ if __name__ == "__main__":
         default=None,
         help="Task to perform analysis on",
     )
+    # add optional argument to specify what space (surface or volume) to write output in
+    parser.add_argument(
+        "-p",
+        "--space",
+        type=str,
+        choices=["surface", "volume"],
+        required=False,
+        default="volume",
+        help="Space to write output in (surface or volume). Surface space is only available for the EuskalIBUR dataset.",
+    )
     # parse arguments
     args = parser.parse_args()
-    main(args.dataset, args.subject, args.analysis, args.task)
+    main(args.dataset, args.subject, args.analysis, args.task, args.space)

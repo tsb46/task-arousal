@@ -7,17 +7,22 @@ requires-python = ">=3.13"
 dependencies = [
     "fbpca>=1.0",
     "matplotlib>=3.10.6",
-    "mbpls>=1.0.4",
     "neurokit2>=0.2.12",
     "nibabel>=5.3.2",
     "nilearn>=0.12.0",
+    "nipype>=1.10.0",
     "pandas>=2.3.2",
     "patsy>=1.0.1",
-    "pybids>=0.19.0",
+    "pybids==0.19.0",
     "pyqt5>=5.15.11",
     "python-dotenv>=1.1.1",
-    "umap-learn>=0.5.9.post2",
 ]
+
+[project.optional-dependencies]
+viz = [
+    "imageio-ffmpeg>=0.6.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["task_arousal"]
 

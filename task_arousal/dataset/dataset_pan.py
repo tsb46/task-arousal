@@ -5,7 +5,7 @@ a given subject in the Precision Targeting of Association Networks (PAN) dataset
 
 import json
 
-from typing import List
+from typing import List, Literal
 
 import pandas as pd
 import nibabel as nib
@@ -15,7 +15,7 @@ from task_arousal.constants import MASK_PAN, DUMMY_VOLUMES, TR_PAN
 from task_arousal.io.file import FileMapper
 from .dataset_utils import (
     load_fmri as _load_fmri,
-    to_4d as _to_4d,
+    to_img as _to_img,
     DatasetLoad,
 )
 
@@ -51,10 +51,10 @@ class DatasetPan:
     def load_data(
         self,
         task: str,
+        func_type: Literal["volume", "surface"] = "volume",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
-        convert_to_2d: bool = True,
         bandpass: tuple[float, float] | None = None,
         load_func: bool = True,
         load_physio: bool = False,
@@ -67,18 +67,18 @@ class DatasetPan:
         ----------
         task : str
             The task identifier.
+        func_type : Literal["volume", "surface"], optional
+            The type of functional data to load. Default is "volume". Surface space is only available for the EuskalIBUR dataset, parameter
+            is kept for API consistency, but if "surface" is selected for PAN, an error will be raised.
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
             Whether to concatenate data across sessions.
-            If convert_to_2d is False, this will be ignored. Note, that
-            event data will not be concatenated to preserve trial timing
+            Note, that event data will not be concatenated to preserve trial timing
             across runs. Default is False.
         normalize : bool, optional
             Whether to normalize (z-score) the data along the time dimension.
-            If convert_to_2d is False, this will be ignored. Default is True.
-        convert_to_2d : bool, optional
-            Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
+            Default is True.
         bandpass : tuple of float | None, optional
             If provided, apply a Butterworth bandpass filter with these (low, high) frequencies in Hz.
             TR is assumed to be 1.355s for PAN dataset. Default is None.
@@ -90,6 +90,9 @@ class DatasetPan:
         verbose : bool, optional
             Whether to print progress messages. Default is True.
         """
+        # if func_type is surface, raise error since PAN dataset does not have surface data
+        if func_type == "surface":
+            raise ValueError("Surface space is not available for the PAN dataset.")
         # if task is not None, ensure it's an available task
         if task not in self.tasks:
             raise ValueError(
@@ -108,7 +111,7 @@ class DatasetPan:
 
         # print processing info - normalize, bandpass
         if verbose:
-            if normalize and convert_to_2d:
+            if normalize:
                 print("fMRI data will be z-scored per voxel.")
             if bandpass is not None:
                 print(
@@ -178,7 +181,6 @@ class DatasetPan:
                     fmri_files[0],
                     normalize=normalize,
                     bandpass=bandpass,
-                    convert_to_2d=convert_to_2d,
                     verbose=verbose,
                 )
                 # append data to dataset
@@ -207,13 +209,9 @@ class DatasetPan:
             if verbose:
                 print("Concatenating data across sessions...")
 
-            # do not concatenate fmri data if not converted to 2d
-            if convert_to_2d:
-                dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
-            else:
-                print(
-                    "Warning: fmri data not concatenated because convert_to_2d is False."
-                )
+            # temporally concatenate fmri data
+            dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
+
             # events are not concatenated to preserve trial timing across runs
 
         if verbose:
@@ -264,28 +262,30 @@ class DatasetPan:
         fp: str,
         normalize: bool = False,
         bandpass: tuple[float, float] | None = None,
-        convert_to_2d: bool = True,
         verbose: bool = True,
     ) -> np.ndarray:
         """
         Load the preprocessed fMRI data from a NIfTI file, delegating to shared utils.
-        Returns time x voxels if convert_to_2d else a 4D NIfTI image.
+        Returns time x voxels matrix.
         """
         return _load_fmri(
             fp,
-            self.mask,  # type: ignore
+            mask_img=self.mask,  # type: ignore
             normalize=normalize,
             bandpass=bandpass,
             tr=TR_PAN,
-            convert_to_2d=convert_to_2d,
             verbose=verbose,
         )
 
-    def to_4d(self, fmri_data: np.ndarray) -> nib.nifti1.Nifti1Image:
+    def to_img(
+        self, fmri_data: np.ndarray, func_type: Literal["volume", "surface"]
+    ) -> nib.nifti1.Nifti1Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        return _to_4d(fmri_data, self.mask)  # type: ignore
+        if func_type == "surface":
+            raise ValueError("Surface space is not available for the PAN dataset.")
+        return _to_img(fmri_data, mask_img=self.mask)  # type: ignore
 
 
 def _extract_timings_pan(
@@ -298,8 +298,8 @@ def _extract_timings_pan(
 
     Parameters
     ----------
-    fp_onsets : str
-        The path to the onset file.
+    fp_onsets : List[str]
+        The paths to the event onset .1D files.
     condition : str
         The condition to extract timings for.
 

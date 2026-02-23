@@ -3,7 +3,7 @@ Class for managing and loading preprocessed dataset files for
 a given subject in the Euskalibur dataset.
 """
 
-from typing import List
+from typing import List, Literal
 
 import pandas as pd
 import nibabel as nib
@@ -14,7 +14,7 @@ from task_arousal.io.file import FileMapper
 from .dataset_utils import (
     load_physio as _load_physio,
     load_fmri as _load_fmri,
-    to_4d as _to_4d,
+    to_img as _to_img,
     DatasetLoad,
 )
 
@@ -75,14 +75,20 @@ class DatasetEuskalibur:
         self.sessions = self.file_mapper.sessions
         # attach mask to instance
         self.mask = nib.nifti1.load(MASK_EUSKALIBUR)
+        # ensure mask is Nifti1Image
+        assert isinstance(self.mask, nib.nifti1.Nifti1Image), (
+            "Mask is not a Nifti1Image."
+        )
+        # initialize surface template attribute for later use in surface data loading and to_img conversion
+        self.surface_template = None
 
     def load_data(
         self,
         task: str,
+        func_type: Literal["volume", "surface"] = "volume",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
-        convert_to_2d: bool = True,
         load_func: bool = True,
         load_physio: bool = True,
         verbose: bool = True,
@@ -94,18 +100,17 @@ class DatasetEuskalibur:
         ----------
         task : str
             The task identifier.
+        func_type : {'volume', 'surface'}, optional
+            The type of functional data to load. Default is 'volume'.
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
             Whether to concatenate data across sessions.
-            If convert_to_2d is False, this will be ignored. Note, that
-            event data will not be concatenated to preserve trial timing
+            Note, that event data will not be concatenated to preserve trial timing
             across runs. Default is False.
         normalize : bool, optional
             Whether to normalize (z-score) the data along the time dimension.
-            If convert_to_2d is False, this will be ignored. Default is True.
-        convert_to_2d : bool, optional
-            Whether to convert fMRI data to 2D array (voxels x time points). Default is True.
+            Default is True.
         load_func : bool, optional
             Whether to load fMRI data. Default is True.
         load_physio : bool, optional
@@ -209,7 +214,13 @@ class DatasetEuskalibur:
                     fmri_data = np.array([])
                 else:
                     fmri_files = self.file_mapper.get_session_fmri_files(
-                        session, task, run=run, desc="preprocfinal"
+                        session,
+                        task,
+                        run=run,
+                        desc="preprocfinal",
+                        extension=".nii.gz"
+                        if func_type == "volume"
+                        else ".dtseries.nii",
                     )
                     # if no fMRI file is found, raise error
                     if len(fmri_files) == 0:
@@ -226,11 +237,18 @@ class DatasetEuskalibur:
                             f"Multiple fMRI files found for session '{session}' and task '{task}' and "
                             f"run '{run if run is not None else ''}'."
                         )
+                    # If we are in surface mode, store a template dtseries path for later to_img()
+                    if func_type == "surface" and self.surface_template is None:
+                        self.surface_template = fmri_files[0]
+                        if verbose:
+                            print(
+                                f"Using surface template dtseries: {self.surface_template}"
+                            )
                     # load fMRI file into 2D array or 4D image
                     fmri_data = self.load_fmri(
                         fmri_files[0],
+                        func_type=func_type,
                         normalize=normalize,
-                        convert_to_2d=convert_to_2d,
                         verbose=verbose,
                     )
 
@@ -259,13 +277,8 @@ class DatasetEuskalibur:
             dataset["physio"] = [
                 pd.concat(dataset["physio"], axis=0, ignore_index=True)
             ]
-            # do not concatenate fmri data if not converted to 2d
-            if convert_to_2d:
-                dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
-            else:
-                print(
-                    "Warning: fmri data not concatenated because convert_to_2d is False."
-                )
+            # temporally concatenate fmri data
+            dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
             # events are not concatenated to preserve trial timing across runs
 
         if verbose:
@@ -348,27 +361,46 @@ class DatasetEuskalibur:
     def load_fmri(
         self,
         fp: str,
+        func_type: Literal["volume", "surface"] = "volume",
         normalize: bool = False,
-        convert_to_2d: bool = True,
         verbose: bool = True,
     ) -> np.ndarray:
         """
         Load the preprocessed fMRI data from a NIfTI file, delegating to shared utils.
-        Returns time x voxels if convert_to_2d else a 4D NIfTI image.
+        Returns time x voxels matrix
         """
         return _load_fmri(
             fp,
-            self.mask,  # type: ignore
+            func_type=func_type,
+            mask_img=self.mask,  # type: ignore
             normalize=normalize,
-            convert_to_2d=convert_to_2d,
             verbose=verbose,
-        )  # type: ignore
+        )
 
-    def to_4d(self, fmri_data: np.ndarray) -> nib.nifti1.Nifti1Image:
+    def to_img(
+        self,
+        fmri_data: np.ndarray,
+        func_type: Literal["volume", "surface"] = "volume",
+        surface_template: str | nib.cifti2.cifti2.Cifti2Image | None = None,
+    ) -> nib.nifti1.Nifti1Image | nib.cifti2.cifti2.Cifti2Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
         """
-        return _to_4d(fmri_data, self.mask)  # type: ignore
+        if func_type == "surface":
+            template = (
+                surface_template
+                if surface_template is not None
+                else self.surface_template
+            )
+            if template is None:
+                raise ValueError(
+                    "surface_template is required for func_type='surface'. "
+                    "Call load_data(..., func_type='surface') first (to auto-set it), "
+                    "or pass surface_template explicitly."
+                )
+            return _to_img(fmri_data, func_type=func_type, surface_template=template)
+
+        return _to_img(fmri_data, func_type=func_type, mask_img=self.mask)  # type: ignore
 
 
 def _extract_timing_pinel_motor(

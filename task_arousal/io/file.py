@@ -108,7 +108,8 @@ class FileMapper:
         self,
         task: str,
         sessions: List[str] | None = None,
-        file_type: Literal["fmriprep", "final"] = "fmriprep",
+        preproc_type: Literal["fmriprep", "final"] = "fmriprep",
+        func_type: Literal["volume", "surface"] = "volume",
     ) -> list[str]:
         """
         Get the fMRI files from all sessions for a specific task.
@@ -119,21 +120,36 @@ class FileMapper:
             The task identifier.
         sessions : list of str, optional
             The sessions to include. If None, all sessions are included.
-        file_type : {'fmriprep', 'final'}
+        preproc_type : {'fmriprep', 'final'}
             The type of fMRI files to retrieve. 'fmriprep' returns files
             with the 'preproc' description (output of fMRIPrep preprocessing).
             'final' returns files with the 'preprocfinal' description
             (output of additional final preprocessing steps).
+        func_type : {'volume', 'surface'}
+            The type of functional data. 'volume' returns volumetric files
+            with the '.nii.gz' extension. 'surface' returns surface files
+            with the '.dtseries.nii' extension.
 
         Returns
         -------
         list of str
             A list of fMRI file paths.
         """
-        if file_type == "fmriprep":
-            desc = "preproc"
-        elif file_type == "final":
-            desc = "preprocfinal"
+        # set description and extension based on preprocessing type
+        if func_type == "volume":
+            extension = ".nii.gz"
+            # set desc based on preproc_type
+            if preproc_type == "fmriprep":
+                desc = "preproc"
+            elif preproc_type == "final":
+                desc = "preprocfinal"
+        elif func_type == "surface":
+            extension = ".dtseries.nii"
+            # surface files do not have 'preproc' desc in fmripep output
+            if preproc_type == "fmriprep":
+                desc = None
+            elif preproc_type == "final":
+                desc = "preprocfinal"
         # if session is selected, ensure that it's valid
         if sessions is not None:
             for session in sessions:
@@ -150,11 +166,13 @@ class FileMapper:
             if len(runs) > 1:
                 for run in runs:
                     files = self.get_session_fmri_files(
-                        session, task, run=run, desc=desc
+                        session, task, run=run, desc=desc, extension=extension
                     )
                     fmri_files.extend(files)
             else:
-                files = self.get_session_fmri_files(session, task, desc=desc)
+                files = self.get_session_fmri_files(
+                    session, task, desc=desc, extension=extension
+                )
                 fmri_files.extend(files)
         return fmri_files
 
@@ -163,7 +181,7 @@ class FileMapper:
         task: str,
         sessions: List[str] | None = None,
         return_json: bool = False,
-        file_type: Literal["fmriprep", "final"] = "fmriprep",
+        preproc_type: Literal["fmriprep", "final"] = "fmriprep",
     ) -> list[str] | list[Tuple[str, str]]:
         """
         Get the physiological files from all sessions for a specific task.
@@ -176,7 +194,7 @@ class FileMapper:
             The sessions to include. If None, all sessions are included.
         return_json : bool
             Whether to return the json sidecar files.
-        file_type : {'fmriprep', 'final'}
+        preproc_type : {'fmriprep', 'final'}
             The type of physio files to retrieve. 'fmriprep' returns raw
             'physio' files output from the fMRIPrep pipeline. 'final' returns
             'preproc' physio files that have undergone preprocessing.
@@ -188,9 +206,9 @@ class FileMapper:
             the physiological file path and JSON sidecar files will be
             returned as a Tuple (physio_file, json_file).
         """
-        if file_type == "fmriprep":
+        if preproc_type == "fmriprep":
             desc = None
-        elif file_type == "final":
+        elif preproc_type == "final":
             desc = "preproc"
         # if session is selected, ensure that it's valid
         if sessions is not None:
@@ -261,7 +279,8 @@ class FileMapper:
         self,
         file_entities: dict[str, str],
         file_modality: Literal["physio", "fmri"],
-        file_type: Literal["fmriprep", "final"] = "fmriprep",
+        preproc_type: Literal["fmriprep", "final"] = "fmriprep",
+        func_type: Literal["volume", "surface"] = "volume",
     ) -> list[str]:
         """
         Get physio, fmri, or event files matching specific BIDS entities.
@@ -273,7 +292,7 @@ class FileMapper:
         file_modality : {'physio', 'fmri'}
             The type of files to retrieve. Options are 'physio' for physiological
             files, 'fmri' for fMRI files.
-        file_type : {'fmriprep', 'final'}
+        preproc_type : {'fmriprep', 'final'}
             The stage of processing to retrieve. Options are 'fmriprep' for raw files,
             'final' for final files.
 
@@ -286,17 +305,21 @@ class FileMapper:
         if file_modality == "physio":
             suffix = "physio"
             extension = ".tsv.gz"
-            if file_type == "fmriprep":
+            if preproc_type == "fmriprep":
                 desc = None
-            elif file_type == "final":
+            elif preproc_type == "final":
                 desc = "preproc"
 
         elif file_modality == "fmri":
-            suffix = "bold"
-            extension = ".nii.gz"
-            if file_type == "fmriprep":
+            if func_type == "surface":
+                suffix = "bold"
+                extension = ".dtseries.nii"
+            elif func_type == "volume":
+                suffix = "bold"
+                extension = ".nii.gz"
+            if preproc_type == "fmriprep":
                 desc = "preproc"
-            elif file_type == "final":
+            elif preproc_type == "final":
                 desc = "preprocfinal"
         else:
             raise ValueError("file_modality must be 'physio' or 'fmri'")
@@ -392,7 +415,8 @@ class FileMapper:
         task: str,
         run: str | None = None,
         ped: str | None = None,
-        desc: Literal["preproc", "preprocfinal"] = "preproc",
+        desc: Literal["preproc", "preprocfinal"] | None = "preproc",
+        extension: str = ".nii.gz",
     ) -> list[str]:
         """
         Get the fMRI files for a specific session and task.
@@ -409,10 +433,14 @@ class FileMapper:
             The phase encoding direction of the fMRI data. If provided, only files
             with this direction will be returned. Options are 'ap' (anterior-posterior)
             and 'pa' (posterior-anterior).
-        desc : Literal['preproc', 'preprocfinal']
+        desc : Literal['preproc', 'preprocfinal'] | None, optional
             The description entity to filter files. Defaults to 'preproc' for
             the output of fMRIPrep preprocessing. Use 'preprocfinal' for
-            files that have undergone additional (final) preprocessing steps.
+            files that have undergone additional (final) preprocessing steps. Note,
+            surface files do not have a description entity in fMRIPrep output,
+        extension : str
+            The file extension to filter files. Defaults to '.nii.gz' for
+            volumetric fMRI files. Use '.dtseries.nii' for surface fMRI files.
 
         Returns
         -------
@@ -430,7 +458,7 @@ class FileMapper:
             session=session,
             task=task,
             suffix="bold",
-            extension=".nii.gz",
+            extension=extension,
             run=run,
             desc=desc,
             echo=None,
