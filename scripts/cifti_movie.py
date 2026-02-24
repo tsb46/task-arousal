@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import sys
 import shutil
 import subprocess
 import tempfile
@@ -81,6 +82,86 @@ def _apply_surf_zoom(ax: Axes, zoom: float) -> None:
         setattr(cast(Any, ax), "dist", new_dist)
     except Exception:
         return
+
+
+def _apply_surf_view_offsets(
+    ax: Axes, *, elev_offset: float, azim_offset: float
+) -> None:
+    """Adjust the 3D camera relative to nilearn's built-in `view=` presets.
+
+    Nilearn sets a base (elev, azim) pair for common views like 'lateral'.
+    Offsets let us tilt/rotate slightly (e.g., to better see into sulci)
+    while keeping the same high-level view preset.
+    """
+
+    try:
+        de = float(elev_offset)
+        da = float(azim_offset)
+    except Exception:
+        return
+
+    if (not np.isfinite(de)) or (not np.isfinite(da)):
+        return
+    if de == 0.0 and da == 0.0:
+        return
+
+    ax_any = cast(Any, ax)
+    try:
+        base_elev = float(getattr(ax_any, "elev", 0.0))
+        base_azim = float(getattr(ax_any, "azim", 0.0))
+        ax_any.view_init(elev=base_elev + de, azim=base_azim + da)
+    except Exception:
+        return
+
+
+def _load_vertex_mask_gifti(path: Path) -> np.ndarray:
+    """Load a per-vertex ROI mask from a GIFTI (.func.gii or .label.gii).
+
+    Nonzero vertices are treated as True. Returns a boolean array (n_vertices,).
+    """
+
+    img = nib.load(str(path))  # type: ignore[assignment]
+    darrays = getattr(img, "darrays", None)
+    if darrays is None or len(darrays) == 0:
+        raise ValueError(f"No data arrays found in ROI mask GIFTI: {path}")
+
+    data = np.asarray(darrays[0].data).ravel()
+    if data.ndim != 1:
+        raise ValueError(f"Expected 1D ROI mask data in {path}, got shape {data.shape}")
+
+    data_f = np.asarray(data, dtype=float)
+    return np.isfinite(data_f) & (data_f != 0.0)
+
+
+def _focus_3d_axes_on_mask(
+    ax: Axes, *, coords: np.ndarray, mask: np.ndarray, pad_mm: float
+) -> None:
+    """Crop a 3D axes to the bounding box of masked vertices (+ padding)."""
+
+    xyz = np.asarray(coords, dtype=float)
+    if xyz.ndim != 2 or xyz.shape[1] != 3:
+        raise ValueError(f"Expected coords shape (n_vertices, 3), got {xyz.shape}")
+
+    m = np.asarray(mask, dtype=bool).ravel()
+    if m.shape[0] != xyz.shape[0]:
+        raise ValueError(
+            f"ROI mask length ({m.shape[0]}) does not match surface vertices ({xyz.shape[0]})"
+        )
+
+    roi = xyz[m]
+    if roi.size == 0:
+        return
+
+    pad = float(pad_mm)
+    lo = roi.min(axis=0) - pad
+    hi = roi.max(axis=0) + pad
+
+    # Disable autoscaling (nilearn/mplot3d tends to keep it on).
+    ax_any = cast(Any, ax)
+    ax_any.set_autoscale_on(False)
+    ax_any.set_xlim(float(lo[0]), float(hi[0]))
+    ax_any.set_ylim(float(lo[1]), float(hi[1]))
+    ax_any.set_zlim(float(lo[2]), float(hi[2]))
 
 
 def _add_colorbar(
@@ -734,6 +815,109 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Larger fills more of each subplot but can crop if too large."
         ),
     )
+
+    p.add_argument(
+        "--surf-elev-offset",
+        type=float,
+        default=0.0,
+        help=(
+            "Camera elevation offset in degrees (applied after nilearn sets the base view). "
+            "Positive tilts the camera to look more from above; negative from below."
+        ),
+    )
+    p.add_argument(
+        "--surf-azim-offset",
+        type=float,
+        default=0.0,
+        help=(
+            "Camera azimuth offset in degrees (applied after nilearn sets the base view). "
+            "Use this to rotate slightly anterior/posterior in a lateral view."
+        ),
+    )
+
+    # Optional per-hemisphere overrides (useful to un-occlude sulci differently on L/R).
+    p.add_argument(
+        "--surf-elev-offset-left",
+        type=float,
+        default=None,
+        help=(
+            "Per-hemisphere override for camera elevation offset (LEFT). "
+            "If not provided, falls back to --surf-elev-offset."
+        ),
+    )
+    p.add_argument(
+        "--surf-elev-offset-right",
+        type=float,
+        default=None,
+        help=(
+            "Per-hemisphere override for camera elevation offset (RIGHT). "
+            "If not provided, falls back to --surf-elev-offset."
+        ),
+    )
+    p.add_argument(
+        "--surf-azim-offset-left",
+        type=float,
+        default=None,
+        help=(
+            "Per-hemisphere override for camera azimuth offset (LEFT). "
+            "If not provided, falls back to --surf-azim-offset."
+        ),
+    )
+    p.add_argument(
+        "--surf-azim-offset-right",
+        type=float,
+        default=None,
+        help=(
+            "Per-hemisphere override for camera azimuth offset (RIGHT). "
+            "If not provided, falls back to --surf-azim-offset."
+        ),
+    )
+
+    p.add_argument(
+        "--surf-offsets-scope",
+        choices=["all", "roi", "full"],
+        default="all",
+        help=(
+            "Which surface panels should receive the camera view offsets. "
+            "'all' applies offsets to every surface panel (default). "
+            "'roi' applies offsets only to ROI-focused panels (when ROI masks are provided). "
+            "'full' applies offsets only to full-surface panels."
+        ),
+    )
+
+    p.add_argument(
+        "--roi-mask-left",
+        type=Path,
+        default=None,
+        help=(
+            "Optional left hemisphere ROI mask GIFTI (.func.gii or .label.gii). "
+            "Nonzero vertices are treated as inside-ROI. When provided, views are forced to lateral."
+        ),
+    )
+    p.add_argument(
+        "--roi-mask-right",
+        type=Path,
+        default=None,
+        help=(
+            "Optional right hemisphere ROI mask GIFTI (.func.gii or .label.gii). "
+            "Nonzero vertices are treated as inside-ROI. When provided, views are forced to lateral."
+        ),
+    )
+    p.add_argument(
+        "--roi-focus-pad-mm",
+        type=float,
+        default=5.0,
+        help="Padding (mm) around ROI bounding box when cropping the 3D axes.",
+    )
+    p.add_argument(
+        "--roi-show-full",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "When ROI masks are provided, also render a full-surface view alongside the ROI-focused view. "
+            "Full-surface panels use --surf-views; ROI panels are always lateral and cropped."
+        ),
+    )
     p.add_argument(
         "--ncols",
         type=int,
@@ -800,7 +984,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--title",
         default=None,
-        help="Optional title template. Use {frame}, {index}, {panel}, {view}, {hemi}, {time} placeholders.",
+        help=(
+            "Optional title template. Use {frame}, {index}, {panel}, {view}, {hemi}, {time}, {focus} placeholders. "
+            "(focus is 'full' or 'roi'.)"
+        ),
     )
 
     # Optional atlas stats
@@ -967,6 +1154,44 @@ def main(argv: list[str] | None = None) -> int:
     surf_left_mesh = surface.load_surf_mesh(str(args.surf_left))
     surf_right_mesh = surface.load_surf_mesh(str(args.surf_right))
 
+    # Optional ROI focus masks (full vertex space). If provided, enforce lateral view.
+    roi_mask_L: np.ndarray | None = None
+    roi_mask_R: np.ndarray | None = None
+    roi_focus = bool(args.roi_mask_left) or bool(args.roi_mask_right)
+    if args.roi_mask_left is not None:
+        if not Path(args.roi_mask_left).exists():
+            raise FileNotFoundError(str(args.roi_mask_left))
+        roi_mask_L = _load_vertex_mask_gifti(Path(args.roi_mask_left))
+    if args.roi_mask_right is not None:
+        if not Path(args.roi_mask_right).exists():
+            raise FileNotFoundError(str(args.roi_mask_right))
+        roi_mask_R = _load_vertex_mask_gifti(Path(args.roi_mask_right))
+
+    # Validate mask lengths against the loaded surfaces.
+    if roi_mask_L is not None:
+        left_coords, _left_faces = surf_left_mesh
+        if int(roi_mask_L.size) != int(np.asarray(left_coords).shape[0]):
+            raise ValueError(
+                "Left ROI mask length does not match left surface vertices: "
+                f"mask={int(roi_mask_L.size)} vs surf={int(np.asarray(left_coords).shape[0])}"
+            )
+    if roi_mask_R is not None:
+        right_coords, _right_faces = surf_right_mesh
+        if int(roi_mask_R.size) != int(np.asarray(right_coords).shape[0]):
+            raise ValueError(
+                "Right ROI mask length does not match right surface vertices: "
+                f"mask={int(roi_mask_R.size)} vs surf={int(np.asarray(right_coords).shape[0])}"
+            )
+
+    if roi_focus and (not bool(args.roi_show_full)):
+        requested = [str(v) for v in (args.surf_views or [])]
+        if requested != ["lateral"]:
+            print(
+                f"[cifti_movie] ROI focus enabled; overriding --surf-views {requested!r} -> ['lateral']",
+                file=sys.stderr,
+            )
+        args.surf_views = ["lateral"]
+
     output_path: Path
     if args.output is None:
         stem = input_path.name
@@ -1116,13 +1341,23 @@ def main(argv: list[str] | None = None) -> int:
 
     keep_temp_frames = bool(args.keep_frames) or bool(args.no_video)
 
-    views = [str(v) for v in args.surf_views]
+    views_full = [str(v) for v in (args.surf_views or [])]
+    views_roi = ["lateral"] if roi_focus else []
 
-    # Panels = (view, hemi) pairs
-    panels: list[tuple[str, str]] = []
-    for view in views:
-        panels.append((view, "L"))
-        panels.append((view, "R"))
+    # Panels = (view, hemi, focus) where focus is 'full' or 'roi'.
+    panels: list[tuple[str, str, str]] = []
+
+    for view in views_full:
+        panels.append((view, "L", "full"))
+        panels.append((view, "R", "full"))
+
+    if roi_focus:
+        if not bool(args.roi_show_full):
+            # ROI-only layout
+            panels = []
+        for view in views_roi:
+            panels.append((view, "L", "roi"))
+            panels.append((view, "R", "roi"))
 
     can_fast_render = bool(args.fast_render)
     # Fast path assumes vmin/vmax are stable across frames because it keeps a
@@ -1266,7 +1501,7 @@ def main(argv: list[str] | None = None) -> int:
             panel_bg: list[np.ndarray] = []
             panel_hemi_kw: list[str] = []
 
-            for panel_idx, (view, hemi) in enumerate(panels):
+            for panel_idx, (view, hemi, focus) in enumerate(panels):
                 ax = axes_flat[panel_idx]
                 if hemi == "L":
                     stat_map = init_left
@@ -1294,6 +1529,7 @@ def main(argv: list[str] | None = None) -> int:
                         panel=panel_idx,
                         view=view,
                         hemi=hemi,
+                        focus=focus,
                         time=time_sec,
                     )
 
@@ -1311,6 +1547,34 @@ def main(argv: list[str] | None = None) -> int:
                     axes=ax,
                 )
 
+                scope = str(args.surf_offsets_scope)
+                apply_offsets = True
+                if scope == "roi" and focus != "roi":
+                    apply_offsets = False
+                elif scope == "full" and focus != "full":
+                    apply_offsets = False
+
+                if apply_offsets:
+                    elev_off = (
+                        float(args.surf_elev_offset_left)
+                        if (hemi == "L" and args.surf_elev_offset_left is not None)
+                        else float(args.surf_elev_offset_right)
+                        if (hemi == "R" and args.surf_elev_offset_right is not None)
+                        else float(args.surf_elev_offset)
+                    )
+                    azim_off = (
+                        float(args.surf_azim_offset_left)
+                        if (hemi == "L" and args.surf_azim_offset_left is not None)
+                        else float(args.surf_azim_offset_right)
+                        if (hemi == "R" and args.surf_azim_offset_right is not None)
+                        else float(args.surf_azim_offset)
+                    )
+                    _apply_surf_view_offsets(
+                        ax,
+                        elev_offset=elev_off,
+                        azim_offset=azim_off,
+                    )
+
                 # Edges are expensive to rasterize in mplot3d; disabling them
                 # can noticeably speed up frame rendering.
                 if ax.collections:
@@ -1321,6 +1585,25 @@ def main(argv: list[str] | None = None) -> int:
                         pass
 
                 _apply_surf_zoom(ax, float(args.surf_zoom))
+
+                # If ROI focus is enabled, crop axes to ROI bounding box.
+                if focus == "roi" and str(view) == "lateral":
+                    if hemi == "L" and roi_mask_L is not None:
+                        coords_L, _ = surf_left_mesh
+                        _focus_3d_axes_on_mask(
+                            ax,
+                            coords=np.asarray(coords_L),
+                            mask=roi_mask_L,
+                            pad_mm=float(args.roi_focus_pad_mm),
+                        )
+                    elif hemi == "R" and roi_mask_R is not None:
+                        coords_R, _ = surf_right_mesh
+                        _focus_3d_axes_on_mask(
+                            ax,
+                            coords=np.asarray(coords_R),
+                            mask=roi_mask_R,
+                            pad_mm=float(args.roi_focus_pad_mm),
+                        )
                 fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.06)
 
                 poly = ax.collections[0] if ax.collections else None
@@ -1374,7 +1657,7 @@ def main(argv: list[str] | None = None) -> int:
                     time_text.set_text(label)
 
                 # Update surface colors.
-                for panel_idx, (view, hemi) in enumerate(panels):
+                for panel_idx, (view, hemi, focus) in enumerate(panels):
                     poly = panel_polys[panel_idx]
                     faces = panel_faces[panel_idx]
                     bg = panel_bg[panel_idx]
@@ -1388,6 +1671,7 @@ def main(argv: list[str] | None = None) -> int:
                             panel=panel_idx,
                             view=view,
                             hemi=hemi,
+                            focus=focus,
                             time=time_sec,
                         )
                         axes_flat[panel_idx].set_title(title)
@@ -1543,7 +1827,7 @@ def main(argv: list[str] | None = None) -> int:
                         borderpad=0.0,
                     )
 
-                for panel_idx, (view, hemi) in enumerate(panels):
+                for panel_idx, (view, hemi, focus) in enumerate(panels):
                     ax = axes_flat[panel_idx]
 
                     if hemi == "L":
@@ -1563,6 +1847,7 @@ def main(argv: list[str] | None = None) -> int:
                             panel=panel_idx,
                             view=view,
                             hemi=hemi,
+                            focus=focus,
                             time=time_sec,
                         )
 
@@ -1580,6 +1865,34 @@ def main(argv: list[str] | None = None) -> int:
                         axes=ax,
                     )
 
+                    scope = str(args.surf_offsets_scope)
+                    apply_offsets = True
+                    if scope == "roi" and focus != "roi":
+                        apply_offsets = False
+                    elif scope == "full" and focus != "full":
+                        apply_offsets = False
+
+                    if apply_offsets:
+                        elev_off = (
+                            float(args.surf_elev_offset_left)
+                            if (hemi == "L" and args.surf_elev_offset_left is not None)
+                            else float(args.surf_elev_offset_right)
+                            if (hemi == "R" and args.surf_elev_offset_right is not None)
+                            else float(args.surf_elev_offset)
+                        )
+                        azim_off = (
+                            float(args.surf_azim_offset_left)
+                            if (hemi == "L" and args.surf_azim_offset_left is not None)
+                            else float(args.surf_azim_offset_right)
+                            if (hemi == "R" and args.surf_azim_offset_right is not None)
+                            else float(args.surf_azim_offset)
+                        )
+                        _apply_surf_view_offsets(
+                            ax,
+                            elev_offset=elev_off,
+                            azim_offset=azim_off,
+                        )
+
                     if ax.collections:
                         try:
                             ax.collections[0].set_edgecolor("none")
@@ -1587,7 +1900,26 @@ def main(argv: list[str] | None = None) -> int:
                         except Exception:
                             pass
 
-                        _apply_surf_zoom(ax, float(args.surf_zoom))
+                    _apply_surf_zoom(ax, float(args.surf_zoom))
+
+                    # If ROI focus is enabled, crop axes to ROI bounding box.
+                    if focus == "roi" and str(view) == "lateral":
+                        if hemi == "L" and roi_mask_L is not None:
+                            coords_L, _ = surf_left_mesh
+                            _focus_3d_axes_on_mask(
+                                ax,
+                                coords=np.asarray(coords_L),
+                                mask=roi_mask_L,
+                                pad_mm=float(args.roi_focus_pad_mm),
+                            )
+                        elif hemi == "R" and roi_mask_R is not None:
+                            coords_R, _ = surf_right_mesh
+                            _focus_3d_axes_on_mask(
+                                ax,
+                                coords=np.asarray(coords_R),
+                                mask=roi_mask_R,
+                                pad_mm=float(args.roi_focus_pad_mm),
+                            )
 
                 for ax in axes_flat[n_panels:]:
                     ax.axis("off")
