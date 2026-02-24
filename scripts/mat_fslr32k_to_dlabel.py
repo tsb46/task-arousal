@@ -1,6 +1,6 @@
 """scripts/mat_fslr32k_to_dlabel.py
 
-Convert a MATLAB .mat atlas in fsLR 32k surface-vertex space into a CIFTI-2
+Convert a MATLAB .mat atlas from the Network Connectivity Toolbox in fsLR 32k surface-vertex space into a CIFTI-2
 label file (.dlabel.nii) using nibabel.
 
 Assumptions
