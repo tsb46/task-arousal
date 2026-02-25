@@ -257,7 +257,7 @@ class DistributedLagEventModel:
         repetition time of the fMRI data (in seconds)
     regressor_extend: float
         how much time (in seconds) after the end of the event to extend the regressor. If None, the regressor
-        will only cover the duration of the event. Defaults is 10 seconds. If regressor_duration is set, this parameter is ignored.
+        will only cover the duration of the event. Defaults is 15 seconds. If regressor_duration is set, this parameter is ignored.
     knots_per_sec: float
         number of knots per second in the spline basis across temporal lags. This ensures
         that varying duration trials have similar temporal smoothness in the basis. For example,
@@ -281,7 +281,7 @@ class DistributedLagEventModel:
     def __init__(
         self,
         tr: float,
-        regressor_extend: float = 10.0,
+        regressor_extend: float = 15.0,
         knots_per_sec: float = 0.3,
         n_knots: int | None = None,
         knots: List[int] | None = None,
