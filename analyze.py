@@ -9,10 +9,6 @@ import pickle
 from typing import Literal
 
 import nibabel as nib
-import numpy as np
-from nilearn.masking import apply_mask
-
-from task_arousal.analysis.cap import CAP, BilinearFMRI, CAPResults
 from task_arousal.analysis.pca import PCA
 from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
@@ -26,15 +22,13 @@ from task_arousal.dataset.dataset_euskalibur import (
     MOTOR_CONDITIONS as MOTOR_CONDITIONS_EUSKALIBUR,
 )
 from task_arousal.dataset.dataset_pan import DatasetPan, PAN_CONDITIONS
+from task_arousal.dataset.dataset_nsd import DatasetNsd
 
 from task_arousal.dataset.dataset_utils import DatasetLoad
 from task_arousal.constants import (
-    MASK_GM_EUSKALIBUR,
     TR_EUSKALIBUR,
-    MASK_EUSKALIBUR,
-    MASK_GM_PAN,
     TR_PAN,
-    MASK_PAN,
+    TR_NSD,
 )
 
 # define output directory
@@ -48,6 +42,12 @@ PHYSIO_LABELS_EUSKALIBUR = [
     "resp_rate",
     "endtidal_co2",
     "endtidal_o2",
+]
+PHYSIO_LABELS_NSD = [
+    "ppg_amplitude",
+    "heart_rate",
+    "resp_amp",
+    "resp_rate",
 ]
 
 # define all tasks (exclude Motor task)
@@ -81,18 +81,19 @@ TASKS_EVENT_PAN = [
     "verbalwm",
     "vmsit",
 ]
+# define NSD tasks (just rest task right now)
+TASKS_NSD = ["rest"]
 
 # define analyses to perform
-# ANALYSES = ["dlm_physio", "dlm_event", "pca", "bilinear"]
 ANALYSES = ["dlm_physio", "dlm_event", "pca"]
 
 
 # define Dataset type
-Dataset = DatasetEuskalibur | DatasetPan
+Dataset = DatasetEuskalibur | DatasetPan | DatasetNsd
 
 
 def main(
-    dataset: Literal["euskalibur", "pan"],
+    dataset: Literal["euskalibur", "pan", "nsd"],
     subject: str | None,
     analysis: str | None,
     task: str | None,
@@ -103,10 +104,10 @@ def main(
 
     Parameters
     ----------
-    dataset : Literal["euskalibur", "pan"]
+    dataset : Literal["euskalibur", "pan", "nsd"]
         Dataset to perform analysis pipeline on
     subject : str | None
-        Subject to perform analysis pipeline on. Required if dataset is euskalibur or pan.
+        Subject to perform analysis pipeline on.
     analysis : str | None
         Type of analysis to perform
     task : str | None
@@ -134,8 +135,6 @@ def main(
             tasks = TASKS_EUSKALIBUR
             tasks_event = TASKS_EVENT_EUSKALIBUR
         tr = TR_EUSKALIBUR
-        mask = MASK_EUSKALIBUR
-        mask_gm = MASK_GM_EUSKALIBUR
         physio_labels = PHYSIO_LABELS_EUSKALIBUR
         # For EuskalIBUR, subject is guaranteed to be non-None
         _subject: str = subject
@@ -157,13 +156,30 @@ def main(
             tasks = TASKS_PAN
             tasks_event = TASKS_EVENT_PAN
         tr = TR_PAN
-        mask = MASK_PAN
-        mask_gm = MASK_GM_PAN
         physio_labels = None  # PAN dataset does not have physio signals
         # For PAN, subject is guaranteed to be non-None
         _subject: str = subject
         # create output directory if it doesn't exist
         os.makedirs(OUT_DIRECTORY + "/pan", exist_ok=True)
+    elif dataset == "nsd":
+        if subject is None:
+            raise ValueError("Subject must be specified for NSD dataset")
+        ds = DatasetNsd(subject=subject)
+        if task is not None:
+            if task not in TASKS_NSD:
+                raise ValueError(f"Task {task} not recognized for NSD dataset")
+            tasks = [task]
+            tasks_event = []
+        else:
+            tasks = TASKS_NSD
+            tasks_event = []
+        tr = TR_NSD
+
+        physio_labels = PHYSIO_LABELS_NSD
+        # For NSD, subject is guaranteed to be non-None
+        _subject: str = subject
+        # create output directory if it doesn't exist
+        os.makedirs(OUT_DIRECTORY + "/nsd", exist_ok=True)
     else:
         raise ValueError(f"Dataset {dataset} not recognized")
 
@@ -213,22 +229,6 @@ def main(
                 _dlm_event(dataset, data, ds, tr, _subject, task, space)
                 print(
                     f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
-                )
-            if "bilinear" in _analysis:
-                # perform bilinear regression analysis
-                _bilinear_regression(
-                    dataset,
-                    data,
-                    ds,
-                    tr,
-                    brain_mask=mask,
-                    gm_mask=mask_gm,
-                    subject=_subject,
-                    task=task,
-                    space=space,
-                )
-                print(
-                    f"Bilinear regression analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
 
@@ -304,137 +304,6 @@ def _dlm_event(
         )
 
 
-def _bilinear_regression(
-    dataset: str,
-    data: DatasetLoad,
-    ds: Dataset,
-    tr: float,
-    brain_mask: str,
-    gm_mask: str,
-    subject: str,
-    task: str,
-    space: Literal["volume", "surface"],
-) -> None:
-    """
-    Perform Bilinear Regression analysis on fMRI data and save results to files
-    Steps:
-    1) Estimate Co-activation Patterns (CAPs) from resting-state fMRI data from peaks of the global signal
-    2) Perform bilinear regression to relate resting-state CAPs to task onsets
-
-    Parameters
-    ----------
-    dataset : str
-        Dataset identifier
-    data : DatasetLoad
-        Loaded task dataset containing fMRI data and associated information
-    ds : Dataset
-        Dataset object for handling data operations
-    tr: float
-        Repetition time (TR) of fMRI data
-    brain_mask : str
-        Path to brain mask file - for masking fMRI data
-    gm_mask : str
-        Path to gray matter mask file - for extracting global signal within gray matter
-    subject : str
-        Subject identifier
-    task : str
-        Task identifier
-    space : Literal["volume", "surface"]
-        Space to write output in (surface or volume)
-    """
-    # get task conditions
-    if dataset == "euskalibur":
-        if task == "pinel":
-            conditions = PINEL_CONDITIONS
-        elif task == "simon":
-            conditions = SIMON_CONDITIONS
-        elif task == "motor":
-            conditions = MOTOR_CONDITIONS_EUSKALIBUR
-        else:
-            raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
-    else:
-        if task in PAN_CONDITIONS:
-            conditions = PAN_CONDITIONS[task]["conditions"]
-        else:
-            raise ValueError(f"Task {task} not recognized for PAN dataset")
-    # CAP only needs to be estimated once per subject from resting-state data
-    # check for metadata file to see if CAPs have already been estimated
-    if not os.path.exists(
-        f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_metadata.pkl"
-    ):
-        print(
-            f"Estimating CAPs from resting-state data for dataset {dataset}, subject {subject}"
-        )
-        # load brain and gray matter masks
-        brain_mask_nii = nib.nifti1.load(brain_mask)
-        gm_mask_nii = nib.nifti1.load(gm_mask)
-        # get 1d gray matter mask
-        gm_mask_vec = apply_mask(gm_mask_nii, brain_mask_nii)
-        # load resting-state data
-        data_rest = ds.load_data(
-            task="rest",
-            concatenate=True,
-        )
-        # estimate CAPs from resting-state data with
-        # fixed number of CAPs and 90th percentile peak thresholding
-        cap_model = CAP(
-            n_caps=5,
-            peak_method="percentile",
-            peak_threshold=90,
-            peak_use_local_maxima=False,
-            gray_matter_mask=gm_mask_vec,
-        )
-        cap_res = cap_model.detect(data_rest["fmri"][0])
-        # write out CAP spatial maps to nifti file
-        cap_maps_4d = ds.to_img(cap_res.cap_maps, func_type=space)
-        nib.save(  # type: ignore
-            cap_maps_4d,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_maps{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
-        )
-        # write out CAP metadata to pickle file
-        pickle.dump(
-            cap_res,
-            open(
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_metadata.pkl", "wb"
-            ),
-        )
-        # free memory
-        del data_rest
-    else:
-        print(f"Loading existing CAP metadata for dataset {dataset}, subject {subject}")
-        # load existing CAP metadata
-        cap_res: CAPResults = pickle.load(
-            open(f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_rest_cap_metadata.pkl", "rb")
-        )
-
-    print(
-        f"Performing bilinear regression analysis for dataset {dataset}, subject {subject}, task {task}"
-    )
-
-    # fit bilinear regression model with default parameters
-    # using CAP maps from resting-state data
-    blinear_model = BilinearFMRI(tr=tr)
-    blinear_model.fit(
-        event_dfs=data["events"],
-        fmri_data=data["fmri"],
-        cap_maps=cap_res.cap_maps,
-    )
-
-    trial_proj = []
-    for condition in conditions:
-        proj = blinear_model.project_trial_coefficients(condition)
-        trial_proj.append(np.array(proj))
-
-    # write bilinear regression results to pickle file
-    pickle.dump(
-        (trial_proj, conditions),
-        open(
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_bilinear_regression_metadata.pkl",
-            "wb",
-        ),
-    )
-
-
 def _dlm_physio(
     dataset: str,
     data: DatasetLoad,
@@ -478,7 +347,6 @@ def _dlm_physio(
         dlm = DistributedLagPhysioModel(
             tr=tr, neg_nlags=-15, nlags=15, n_knots=5, basis_type="cr"
         )
-
         dlm = dlm.fit(
             X=data["physio"][0][physio_label].to_numpy().reshape(-1, 1),
             Y=data["fmri"][0],  # type: ignore
@@ -556,7 +424,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        choices=["euskalibur", "pan"],
+        choices=["euskalibur", "pan", "nsd"],
         help="Dataset to perform analysis pipeline on",
     )
     # add subject argument
@@ -564,9 +432,10 @@ if __name__ == "__main__":
         "-s",
         "--subject",
         type=str,
-        default=None,
-        required=False,
-        help="Subject to perform analysis pipeline. Required if dataset is euskalibur.",
+        required=True,
+        help="Subject to perform preprocessing pipeline. "
+        "For BIDS datasets (euskalibur, pan), only the subject ID is needed, e.g., 001 (not sub-001). "
+        "For NSD, the full subject ID is needed (e.g. subj01).",
     )
     # add optional analysis argument (default: all analyses)
     parser.add_argument(
