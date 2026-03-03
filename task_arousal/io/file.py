@@ -185,7 +185,7 @@ class FileMapperBids:
         sessions: List[str] | None = None,
         return_json: bool = False,
         preproc_type: Literal["orig", "final"] = "orig",
-    ) -> list[str] | list[Tuple[str, str]]:
+    ) -> list[str] | list[tuple[str, str]]:
         """
         Get the physiological files from all sessions for a specific task.
 
@@ -235,8 +235,7 @@ class FileMapperBids:
             else:
                 files = self.get_session_physio_files(session, task, desc=desc)
                 physio_files.extend(files)
-        if return_json:
-            return [(f, f.replace(".tsv.gz", ".json")) for f in physio_files]
+
         return physio_files
 
     def get_event_files(
@@ -652,7 +651,7 @@ class FileMapperNSD:
         sessions: List[str] | None = None,
         return_json: bool = False,
         preproc_type: Literal["orig", "final"] = "orig",
-    ) -> list[str] | list[Tuple[str, str]]:
+    ) -> list[Tuple[str, str]] | list[Tuple[Tuple[str, str], str]]:
         """
         Get the physiological files from all sessions for a specific task.
 
@@ -663,7 +662,9 @@ class FileMapperNSD:
         sessions : list of str, optional
             The sessions to include. If None, all sessions are included.
         return_json : bool
-            Whether to return the json sidecar files.
+            NSD does not provide BIDS-style JSON sidecars for physio files.
+            For downstream compatibility with code that expects JSON sidecars, this option allows returning a tuple of
+            (physio_file, json_file) where json_file is a placeholder string indicating that no JSON file is available.
         preproc_type : {'orig', 'final'}
             The type of physio files to retrieve. 'orig' returns minimally processed
             'physio' files output from the NSD pipeline. 'final' returns
@@ -671,7 +672,7 @@ class FileMapperNSD:
 
         Returns
         -------
-        list of str or list of tuple of str
+        list of tuple of str
             A list of physiological file paths. If `return_json` is True,
             the physiological file path and JSON sidecar files will be
             returned as a Tuple (physio_file, json_file).
@@ -699,8 +700,13 @@ class FileMapperNSD:
             else:
                 files = self.get_session_physio_files(session, task, desc=preproc_type)
                 physio_files.extend(files)
+
+        # if return_json is True, return a tuple of (physio_file, json_file) where json_file is a placeholder string indicating that no JSON file is available
         if return_json:
-            return [(f, f.replace(".tsv.gz", ".json")) for f in physio_files]
+            physio_files = [
+                (physio_file, "no_json_available") for physio_file in physio_files
+            ]
+
         return physio_files
 
     def get_event_files(
@@ -744,9 +750,7 @@ class FileMapperNSD:
 
     def get_matching_files(
         self,
-        session: str | None,
-        task: str | None,
-        run: str | None,
+        file_entities: dict[str, str],
         file_modality: Literal["physio", "fmri"],
         preproc_type: Literal["orig", "final"] = "orig",
         func_type: Literal["volume", "surface"] = "volume",
@@ -762,12 +766,9 @@ class FileMapperNSD:
 
         Parameters
         ----------
-        session : str
-            The session identifier.
-        task : str
-            The task identifier.
-        run : str
-            The run identifier.
+        file_entities : dict of str to str
+            A dictionary specifying the BIDS-like entities to match. Keys can include 'session', 'task', and 'run'.
+            Values should be the specific identifier to match, or None to match all
         file_modality : {'physio', 'fmri'}
             The type of files to retrieve. Options are 'physio' for physiological
             files, 'fmri' for fMRI files.
@@ -781,9 +782,13 @@ class FileMapperNSD:
             A list of matching file paths.
         """
         # get session, task and run components
-        _session = "*" if session is None else session
-        _task = "*" if task is None else task
-        _run = "*" if run is None else run
+        _session = (
+            "*"
+            if file_entities.get("session") is None
+            else file_entities.get("session")
+        )
+        _task = "*" if file_entities.get("task") is None else file_entities.get("task")
+        _run = "*" if file_entities.get("run") is None else file_entities.get("run")
 
         # build glob pattern based on modality
         if file_modality == "physio":
@@ -983,16 +988,16 @@ class FileMapperNSD:
         task: str,
         run: str | None = None,
         desc: Literal["orig", "final"] = "orig",
-    ) -> list[str] | list[dict[str, str]]:
+    ) -> list[str] | list[Tuple[str, str]]:
         """
         Get the physiological file paths for a specific session and task. Parameters are consistent
         with FileMapperBids for API compatibility. However, the NSD dataset does not
         follow BIDS format, so some parameters are not used and others repurposed.
 
         Note, respiratory and pulse data are stored separately in NSD dataset. If the desc = 'orig',
-        both files will be returned for each run as a list of dictionaries with keys 'resp' and 'pulse'.
-        Both signals are combined into a single physio file in the 'final' processing stage. If the desc='final', only a single
-        physio file will be returned for each run.
+        both files will be returned for each run as a list of tuples with pulse signals in the first position and
+        respiratory signals in the second position. Both signals are combined into a single physio file in the 'final'
+        processing stage. If the desc='final', only a single physio file will be returned for each run.
 
         Parameters
         ----------
@@ -1009,9 +1014,10 @@ class FileMapperNSD:
 
         Returns
         -------
-        list of str | list[dict[str, str]]
-            A list of physiological file paths (desc='orig') or
-            a list of dictionaries with keys 'resp' and 'pulse' (desc='final').
+        list of str | list[Tuple[str, str]]
+            A list of physiological file paths (desc='final') or
+            a list of tuples with pulse signals in the first position and
+            respiratory signals in the second position (desc='orig').
         """
         # get build path to minimally preprocessed or fully processed physio directory
         if desc == "orig":
@@ -1021,7 +1027,11 @@ class FileMapperNSD:
         else:
             raise ValueError("desc must be 'orig' or 'final'")
         # get runs for this session and task - NSD always multiple runs
-        runs = self.tasks_runs[task][session]
+        # if run is provided, use that, otherwise get all runs for this session and task
+        if run is not None:
+            runs = [run]
+        else:
+            runs = self.tasks_runs[task][session]
         # construct file path pattern
         filenames = []
         for run in runs:
@@ -1030,18 +1040,33 @@ class FileMapperNSD:
                     f"{self.subject}_task-{task}_session{session}_run{run}_resp.tsv"
                 )
                 pulse_pattern = (
-                    f"{self.subject}_task-{task}_session{session}_run{run}_pulse.tsv"
+                    f"{self.subject}_task-{task}_session{session}_run{run}_puls.tsv"
                 )
+                # first, check that the resp and pulse files exist for this run
+                resp_fp = os.path.join(physio_dir, resp_pattern)
+                pulse_fp = os.path.join(physio_dir, pulse_pattern)
+                # if path doesn't exist, don't raise error - just skip this run and move on to the next one,
+                # since some runs are  missing physio data in NSD dataset
+                if not os.path.exists(resp_fp) or not os.path.exists(pulse_fp):
+                    print(
+                        f"Physio data missing for run {run} in session {session} for subject {self.subject}. Skipping this run."
+                    )
+                    continue
                 filenames.append(
-                    {
-                        "resp": os.path.join(physio_dir, resp_pattern),
-                        "pulse": os.path.join(physio_dir, pulse_pattern),
-                    }
+                    (
+                        os.path.join(physio_dir, pulse_pattern),
+                        os.path.join(physio_dir, resp_pattern),
+                    )
                 )
             elif desc == "final":
-                physio_pattern = (
-                    f"{self.subject}_task-{task}_session{session}_run{run}_physio.tsv"
-                )
+                physio_pattern = f"{self.subject}_task-{task}_session{session}_run{run}_physio.tsv.gz"
+                # . check that the physio file exists for this run
+                physio_fp = os.path.join(physio_dir, physio_pattern)
+                if not os.path.exists(physio_fp):
+                    print(
+                        f"Physio data missing for run {run} in session {session} for subject {self.subject}. Skipping this run."
+                    )
+                    continue
                 filenames.append(os.path.join(physio_dir, physio_pattern))
 
         return filenames
@@ -1103,8 +1128,8 @@ class FileMapperNSD:
                 )
             # try to convert session and run to an integer to check that they are valid integers
             try:
-                session_int = int(session)
-                run_int = int(run)
+                int(session)
+                int(run)
             except ValueError:
                 raise ValueError(
                     f"File path '{fp}' session '{session}' or run '{run}' is not a valid integer."

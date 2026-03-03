@@ -44,7 +44,7 @@ HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
 FWHM_EUSKALIBUR = 4  # in mm
 FWHM_PAN = 4  # in mm
-FWHM_NSD = 3  # in mm
+FWHM_NSD = 0  # in mm
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = [
     "respiratory_effort",
@@ -52,5 +52,6 @@ PHYSIO_COLUMNS_EUSKALIBUR = [
     "respiratory_CO2",
     "respiratory_O2",
 ]
+PHYSIO_COLUMNS_NSD = ["cardiac", "respiratory_effort"]
 # physiological resample frequency (in Hz)
 PHYSIO_RESAMPLE_F = 50

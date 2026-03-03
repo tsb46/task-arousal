@@ -3,17 +3,16 @@ Class for managing and loading preprocessed dataset files for
 a given subject in the Natural Scenes Dataset (NSD).
 """
 
-import json
-
-from typing import List
+from typing import List, Literal
 
 import pandas as pd
 import nibabel as nib
 import numpy as np
 
-from task_arousal.constants import DUMMY_VOLUMES, TR_NSD
+from task_arousal.constants import TR_NSD
 from task_arousal.io.file import FileMapperNSD
 from .dataset_utils import (
+    load_physio as _load_physio,
     load_fmri as _load_fmri,
     to_img as _to_img,
     DatasetLoad,
@@ -48,12 +47,13 @@ class DatasetNsd:
     def load_data(
         self,
         task: str,
+        func_type: Literal["volume", "surface"] = "volume",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
         bandpass: tuple[float, float] | None = None,
         load_func: bool = True,
-        load_physio: bool = False,
+        load_physio: bool = True,
         verbose: bool = True,
     ) -> DatasetLoad:
         """
@@ -61,6 +61,8 @@ class DatasetNsd:
 
         Parameters
         ----------
+        func_type : Literal["volume", "surface"], optional
+            The type of functional data, either "volume" or "surface". "Surface" is not currently supported for NSD dataset. Default is "volume".
         task : str
             The task identifier.
         sessions : str or List[str], optional
@@ -79,10 +81,14 @@ class DatasetNsd:
             Whether to load fMRI data. Since this dataset only contains fMRI data,
             this parameter is kept for API consistency. Parameter is ignored. Default is True.
         load_physio : bool, optional
-            No physiological data. Kept for API consistency. Parameter is ignored. Default is False.
+            Whether to load physiological data. Default is True.
         verbose : bool, optional
             Whether to print progress messages. Default is True.
         """
+        if func_type == "surface":
+            raise NotImplementedError(
+                "Surface data is not available for NSD dataset. This method is not implemented for surface data."
+            )
         # if task is not None, ensure it's an available task
         if task not in self.tasks:
             raise ValueError(
@@ -126,6 +132,7 @@ class DatasetNsd:
         # initialize dataset dictionary
         dataset = {
             "fmri": [],
+            "physio": [],
             "events": [],
         }
         # load files for each session
@@ -143,6 +150,38 @@ class DatasetNsd:
             for run in runs_session:
                 if verbose and run is not None:
                     print(f"    Loading run '{run}'...")
+                # load physio data if requested
+                if not load_physio:
+                    if verbose:
+                        print("Skipping physio data loading...")
+                    physio_df = pd.DataFrame()
+                else:
+                    # load physio file
+                    physio_files = self.file_mapper.get_session_physio_files(
+                        session, task, run=run, desc="final"
+                    )
+                    # check if exactly one physio file is found
+                    if len(physio_files) == 0:
+                        # in some scenarios, physio may not be recorded, skip loading
+                        if verbose:
+                            print(
+                                f"No physiological file found for session '{session}' and task "
+                                f"{task}' and run '{run if run is not None else ''}'."
+                            )
+                        continue
+                    elif len(physio_files) > 1:
+                        breakpoint()
+                        raise ValueError(
+                            f"Multiple physiological files found for session '{session}' "
+                            f"and task '{task}' and run '{run if run is not None else ''}'."
+                        )
+                    # ensure physio file is string
+                    assert isinstance(physio_files[0], str), (
+                        f"Expected physio file path to be a string, but got {type(physio_files[0])}."
+                    )
+                    # load physio file into dataframe
+                    physio_df = self.load_physio(physio_files[0], normalize=normalize)
+                # load fmri data, if requested
                 fmri_files = self.file_mapper.get_session_fmri_files(
                     session, task, run=run, desc="final"
                 )
@@ -169,6 +208,7 @@ class DatasetNsd:
                 )
                 # append data to dataset
                 dataset["fmri"].append(fmri_data)
+                dataset["physio"].append(physio_df)
                 # load event files
                 if has_events:
                     onset_files = self.file_mapper.get_session_event_files(
@@ -193,6 +233,10 @@ class DatasetNsd:
             if verbose:
                 print("Concatenating data across sessions...")
 
+            # temporally concatenate physio data
+            dataset["physio"] = [
+                pd.concat(dataset["physio"], axis=0, ignore_index=True)
+            ]
             # temporally concatenate fmri data
             dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
 
@@ -228,6 +272,24 @@ class DatasetNsd:
             "Event data is not available for NSD dataset. This method is not implemented."
         )
 
+    def load_physio(self, fp: str, normalize: bool = False) -> pd.DataFrame:
+        """
+        Load the preprocessed physio data from a TSV file.
+
+        Parameters
+        ----------
+        fp : str
+            The path to the physio TSV file.
+        normalize : bool, optional
+            Whether to normalize (z-score) the data along the time dimension. Default is False.
+
+        Returns
+        -------
+        pd.DataFrame
+            The physio data as a pandas DataFrame.
+        """
+        return _load_physio(fp, normalize=normalize)
+
     def load_fmri(
         self,
         fp: str,
@@ -248,8 +310,22 @@ class DatasetNsd:
             verbose=verbose,
         )
 
-    def to_img(self, fmri_data: np.ndarray) -> nib.nifti1.Nifti1Image:
+    def to_img(
+        self, fmri_data: np.ndarray, func_type: Literal["volume", "surface"] = "volume"
+    ) -> nib.nifti1.Nifti1Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
+
+        Parameters
+        ----------
+        fmri_data : np.ndarray
+            The fMRI data as a 2D array of shape (time, voxels).
+        func_type : Literal["volume", "surface"], optional
+            The type of functional data, either "volume" or "surface". "Surface" is not currently supported for NSD dataset.
+            Default is "volume".
         """
+        if func_type == "surface":
+            raise NotImplementedError(
+                "Surface data is not available for NSD dataset. This method is not implemented for surface data."
+            )
         return _to_img(fmri_data, mask_img=self.mask)  # type: ignore

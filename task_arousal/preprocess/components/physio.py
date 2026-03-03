@@ -19,7 +19,7 @@ from scipy.stats import zscore
 
 def physio_pipeline(
     dataset: str,
-    physio_fp: str,
+    physio_fp: str | Tuple[str, str],
     physio_json: str | None,
     fmri_fp: str,
     physio_cols: List[str],
@@ -27,6 +27,7 @@ def physio_pipeline(
     physio_resample_f: float,
     fmri_dummy_n: int,
     highpass: float,
+    remove_dummy: bool = True,
     slicetiming_ref: float = 0.5,
     save_physio_figs: bool = False,
 ) -> dict[str, np.ndarray]:
@@ -45,8 +46,9 @@ def physio_pipeline(
     ----------
     dataset : str
         The dataset identifier.
-    physio_fp : str
-        The file path to the physiological data.
+    physio_fp : str | Tuple[str, str]
+        The file path to the physiological data. For datasets with separate files for different physiological signals,
+        this can be a tuple of file paths.
     physio_json : str | None
         The file path to the physiological JSON sidecar for euskalibur dataset. HCP physio
         does not have JSON sidecar.
@@ -62,9 +64,12 @@ def physio_pipeline(
         The number of dummy volumes removed from the fMRI data.
     highpass : float
         The high-pass filter cutoff frequency in Hz.
+    remove_dummy : bool, optional
+        Whether to remove dummy volumes from the physiological data. Default is True.
     slicetiming_ref : float, optional
         The slice timing reference (0-1) within the TR for resampling physiological data
-        to fMRI time points. Default is 0.5 (middle of the TR).
+        to fMRI time points. Default is 0.5 (middle of the TR). Note, NSD data is already resampled
+        to the beginning of the TR, so for NSD this will be set to 0.0 in the pipeline.
     save_physio_figs : bool, optional
         Whether to save figures of the physiological signals, by default False.
 
@@ -73,6 +78,10 @@ def physio_pipeline(
     dict[str, np.ndarray]
         The processed physiological data.
     """
+    # fix slice timing reference for NSD, which is already resampled to the beginning of the TR
+    if dataset == "nsd":
+        slicetiming_ref = 0.0
+
     # Load physiological data
     physio_dict, physio_sf = load_physio(
         dataset=dataset,
@@ -81,23 +90,33 @@ def physio_pipeline(
         dummy_n=fmri_dummy_n,
         tr=tr,
         physio_cols=physio_cols,
+        remove_dummy=remove_dummy,
     )
     # load fmri data
     fmri_img = nib.load(fmri_fp)  # type: ignore
 
-    fmri_n_tp = fmri_img.shape[-1] - fmri_dummy_n  # type: ignore
+    # calculate number of time points in fMRI data after dummy volume removal, if applicable
+    if remove_dummy:
+        fmri_n_tp = fmri_img.shape[-1] - fmri_dummy_n  # type: ignore
+    else:
+        fmri_n_tp = fmri_img.shape[-1]  # type: ignore
+
     # define function for feature extraction based on column name
     feature_extraction_funcs = {
         "respiratory_effort": extract_resp_features,
         "cardiac": extract_ppg_features,
-        "respiratory_CO2": extract_resp_co2_features,
-        "respiratory_O2": extract_resp_o2_features,
     }
+    # collections of CO2 and O2 signals are unique to EuskalIBUR dataset, so we will only add these feature extraction functions for this dataset
+    if dataset == "euskalibur":
+        if "co2" in physio_cols:
+            feature_extraction_funcs["co2"] = extract_resp_co2_features
+        if "o2" in physio_cols:
+            feature_extraction_funcs["o2"] = extract_resp_o2_features
 
     # loop through physio columns and extract features
     physio_data_proc = {}
     for col in physio_cols:
-        # physio has high sampling rate (1000Hz or 400Hz), so we can downsample to 50Hz
+        # if physio has high sampling rate (1000Hz or 400Hz), so we can downsample to 50Hz
         # use polyphase filtering to avoid aliasing
         physio_resampled = nk.signal_resample(
             physio_dict[col],
@@ -108,7 +127,17 @@ def physio_pipeline(
         if save_physio_figs:
             # save figure of resampled physio signal
             if dataset == "euskalibur":
+                assert isinstance(physio_fp, str), (
+                    "physio_fp should be a string for euskalibur dataset"
+                )
                 fig_fp = physio_fp.replace(".tsv.gz", f"_{col}.png")
+            elif dataset == "nsd":
+                assert isinstance(physio_fp, tuple), (
+                    "physio_fp should be a tuple for nsd dataset"
+                )
+                fig_fp = physio_fp[0].replace(".tsv", f"_{col}.png")
+            else:
+                raise ValueError(f"Unsupported dataset: {dataset}")
 
             _physio_write_image(
                 fp_out=fig_fp,
@@ -116,10 +145,10 @@ def physio_pipeline(
                 sf=physio_resample_f,
                 label=col,
             )
-        assert isinstance(physio_resampled, np.ndarray), (
-            "Resampled physiological data is not a numpy array."
-        )
+
         # extract features
+        physio_resampled = np.asarray(physio_resampled)  # ensure numpy array
+
         if col in feature_extraction_funcs:
             physio_features = feature_extraction_funcs[col](
                 physio_resampled, physio_resample_f
@@ -136,7 +165,7 @@ def physio_pipeline(
                 )
                 # next, interpolate to fMRI time points
                 feat_ts_resampled = _physio_resample_to_fmri(
-                    feat_ts_lowpass,
+                    feat_ts_lowpass,  # type: ignore
                     physio_sf=physio_resample_f,
                     fmri_n_tp=fmri_n_tp,
                     fmri_tr=tr,
@@ -164,11 +193,12 @@ def physio_pipeline(
 
 def load_physio(
     dataset: str,
-    physio_fp: str,
+    physio_fp: str | Tuple[str, str],
     physio_json: str | None,
     dummy_n: int,
     tr: float,
     physio_cols: List[str],
+    remove_dummy: bool = True,
 ) -> Tuple[dict[str, list[float]], float]:
     """
     Load physiological data from a file (HCP or Euskalibur datasets), and trim to start and
@@ -178,8 +208,8 @@ def load_physio(
     ----------
     dataset : str
         The dataset identifier.
-    physio_fp : str
-        The file path to the physiological data.
+    physio_fp : str | Tuple[str, str]
+        The file path to the physiological data. For datasets with separate files for different physiological signals, this can be a tuple of file paths.
     physio_json : str | None
         The file path to the physiological JSON sidecar for the euskalibur dataset. HCP physio
         does not have JSON sidecar.
@@ -189,6 +219,8 @@ def load_physio(
         The repetition time (TR) of the fMRI data.
     physio_cols : List[str]
         The list of physiological columns to load.
+    remove_dummy : bool, optional
+        Whether to remove dummy volumes from the physiological data. Default is True.
 
     Returns
     -------
@@ -204,14 +236,33 @@ def load_physio(
             raise ValueError(
                 "Euskalibur dataset requires a JSON sidecar for physiological data."
             )
+        if isinstance(physio_fp, tuple):
+            raise ValueError(
+                "Euskalibur dataset should have a single physiological data file, not separate files for different signals."
+            )
         physio_df, sampling_freq = _load_physio_euskalibur(
             physio_fp, physio_json, physio_cols
         )
+    elif dataset == "nsd":
+        if isinstance(physio_fp, str):
+            raise ValueError(
+                "NSD dataset should have separate physiological data files for pulse and respiration."
+            )
+        physio_df, sampling_freq = _load_physio_nsd(physio_fp)
+        # check that physio_cols are in the dataframe
+        missing_cols = [col for col in physio_cols if col not in physio_df.columns]
+        if missing_cols:
+            raise ValueError(
+                f"Missing expected columns in physiological data: {missing_cols}"
+            )
+        # select only the specified columns
+        physio_df = physio_df[physio_cols].copy()
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 
     # trim physio signals to match removal of fMRI dummy volumes
-    physio_df = _trim_physio_signals_dummy(physio_df, dummy_n, tr, sampling_freq)
+    if remove_dummy:
+        physio_df = _trim_physio_signals_dummy(physio_df, dummy_n, tr, sampling_freq)
     # convert to dict
     try:
         physio_dict = physio_df.to_dict(orient="list")
@@ -314,6 +365,8 @@ def extract_resp_co2_features(
         method="butterworth",
         order=4,
     )
+    # ensure signal is numpy array
+    ts_filt = np.asarray(ts_filt)
     # find peaks (end-tidal CO2 points)
     co2_peaks, peaks_info = find_peaks(
         ts_filt,
@@ -360,6 +413,8 @@ def extract_resp_o2_features(
         method="butterworth",
         order=4,
     )
+    # ensure signal is numpy array
+    ts_filt = np.asarray(ts_filt)
     # invert signal to find minima as peaks
     ts_filt_neg = np.array(ts_filt) * -1
     # find minima (end-tidal O2 points)
@@ -526,6 +581,42 @@ def _load_physio_euskalibur(
     # trim physio signals to start and end from first trigger
     physio_df = _trim_physio_signals_trigger(physio_df)
     return physio_df[physio_cols].copy(), sampling_freq
+
+
+def _load_physio_nsd(physio_fp: Tuple[str, str]) -> Tuple[pd.DataFrame, float]:
+    """
+    Load physiological data from NSD dataset.
+
+    Physiological data for pulse and respiration are provided in separate .tsv files, and
+    there is no JSON sidecar.
+
+    According to NSD Data Description, the sampling frequency of the physiological data is 50Hz. Also,
+    the physiological recordings have already been trimmed to the start and end of the scan triggers, so
+    no additional trimming is needed.
+    # https://cvnlab.slite.page/p/vjWTghPTb3/Time-series-data
+
+
+    Parameters
+    ----------
+    physio_fp : Tuple[str, str]
+        The file paths to the physiological data for pulse and respiration. The order
+        should be pulse file first, then respiration file.
+
+    Returns
+    -------
+    pd.DataFrame
+        The physiological data.
+    float
+        the sampling frequency of the physiological data.
+    """
+    sampling_freq = 50.0
+    # load physio df
+    physio_df = pd.concat(
+        [pd.read_csv(fp, sep="\t", header=None) for fp in physio_fp], axis=1
+    )
+    # set column names
+    physio_df.columns = ["cardiac", "respiratory_effort"]
+    return physio_df, sampling_freq
 
 
 def _trim_physio_signals_trigger(
