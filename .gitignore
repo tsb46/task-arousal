@@ -40,6 +40,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# external directory
+/external
+
 # data directory
 /data
 
