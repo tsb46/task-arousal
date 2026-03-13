@@ -534,8 +534,21 @@ class FileMapperNSD:
         "subj07",
         "subj08",
     ]
+    # subject label to subject bids translation
+    subject_label_to_bids = {
+        "subj01": "01",
+        "subj02": "02",
+        "subj03": "03",
+        "subj04": "04",
+        "subj05": "05",
+        "subj06": "06",
+        "subj07": "07",
+        "subj08": "08",
+    }
     # hard code tasks in NSD dataset
-    available_tasks = ["rest"]
+    available_tasks = ["rest", "nsdimagery"]
+    # hard code TR by task in NSD dataset (note that TR is not consistent across tasks in NSD, so we cannot set a single constant TR value for the dataset)
+    TR_by_task = {"rest": 1.0, "nsdimagery": 1.333}
     # define data directory from constants.py, which can be set through environment variable or defaults to 'data/nsd'
     data_directory = DATA_DIRECTORY_NSD
 
@@ -605,9 +618,10 @@ class FileMapperNSD:
             preprocessed functional files from NSD.
             'final' returns files from the additional preprocessing steps.
         func_type : {'volume', 'surface'}
-            The type of functional data. 'volume' returns volumetric files
-            with the '.nii.gz' extension. 'surface' returns surface files
-            with the '.dtseries.nii' extension.
+            The type of functional data. Only volume files are available for NSD,
+            so this parameter does not affect file retrieval but is included
+            for API compatibility with FileMapperBids.
+
 
         Returns
         -------
@@ -618,7 +632,8 @@ class FileMapperNSD:
         if func_type == "volume":
             extension = ".nii.gz"
         elif func_type == "surface":
-            extension = ".dtseries.nii"
+            raise NotImplementedError("Surface files are not available in NSD dataset.")
+
         # if session is selected, ensure that it's valid
         if sessions is not None:
             for session in sessions:
@@ -775,6 +790,10 @@ class FileMapperNSD:
         preproc_type : {'orig', 'final'}
             The stage of processing to retrieve. Options are 'orig' for minimally
              processed files,'final' for final processed files.
+        func_type : {'volume', 'surface'}
+            The type of functional data. Only volume files are available for NSD,
+            so this parameter does not affect file retrieval but is included
+            for API compatibility with FileMapperBids.
 
         Returns
         -------
@@ -834,7 +853,9 @@ class FileMapperNSD:
         elif file_modality == "fmri":
             # get extension based on func_type
             if func_type == "surface":
-                extension = ".dtseries.nii"
+                raise NotImplementedError(
+                    "Surface files are not available in NSD dataset."
+                )
             elif func_type == "volume":
                 extension = ".nii.gz"
             # get base directory based on preproc_type
@@ -892,18 +913,22 @@ class FileMapperNSD:
 
     def get_session_event_files(
         self, session: str, task: str, run: str | None = None, ped: str | None = None
-    ) -> list[tuple[str, str]] | list[str]:
+    ) -> list[str]:
         """
-        Get the event files for a specific session and task.
+        Get NSD event files for a specific session and task. Only the nsdimagery
+        task is used currently. These files are in BIDS format.
+        See note in the events_to_df method in DatasetNSD class.
 
         Parameters
         ----------
         session : str
-            The session identifier.
+            The session identifier. For the NSD imagery task, a fake session identifier of '01' is used.
         task : str
             The task identifier.
         run : str, optional
-            The run identifier. If provided, only files for this run will be returned.
+            The run identifier. If provided, only files for this run will be returned. The NSD imagery
+            event files are organized by task (attA, attB, attC) that correspond to runs '02', '05', '08',
+            in the functional files, respectively.
         ped : str, optional
             The phase encoding direction of the fMRI data. This parameter is not used
             in the NSD dataset, as event files are not organized by phase encoding direction.
@@ -911,13 +936,37 @@ class FileMapperNSD:
 
         Returns
         -------
-        list of tuple of str | list of str
-            A list of onset and duration file path tuples (onset, duration) - for Euskalibur,
-            or a list of event file paths - for PAN.
+        list of str
+            A list of BIDS event file paths.
         """
-        raise NotImplementedError(
-            "Event file retrieval not implemented for NSD dataset."
-        )
+        # run to task mapping for NSD imagery task
+        run_task_mapping = {"02": "attA", "05": "attB", "08": "attC"}
+        # build path to design directory
+        design_dir = os.path.join(self.data_directory, "design")
+        # get runs for the NSD imagery task - should always be three runs, but check if run is provided to filter
+        if run is not None:
+            runs = [run]
+        else:
+            runs = self.tasks_runs[task][session]
+
+        filenames = []
+        for run in runs:
+            if task == "nsdimagery":
+                # get corresponding task for this run
+                task_run = run_task_mapping.get(run, None)
+                if task_run is None:
+                    raise ValueError(
+                        f"Run '{run}' does not correspond to a valid task in NSD imagery dataset."
+                    )
+                # e.g. sub-01_ses-nsdimagery_session01_task-attA_events.tsv
+                pattern = f"sub-{self.subject_label_to_bids[self.subject]}_ses-{task}_session01_task-{task_run}_events.tsv"
+                filenames.append(os.path.join(design_dir, pattern))
+            else:
+                raise ValueError(
+                    f"Task '{task}' does not have event files in NSD dataset."
+                )
+
+        return filenames
 
     def get_session_fmri_files(
         self,
@@ -965,7 +1014,7 @@ class FileMapperNSD:
             func_dir = os.path.join(self.data_directory, "func/final")
         else:
             raise ValueError("desc must be 'orig' or 'final'")
-        # get runs for this session and task - NSD always multiple runs
+        # get runs for this session and task - NSD always multiple runs for resting-state
         if run is not None:
             runs = [run]
         else:
@@ -1088,6 +1137,24 @@ class FileMapperNSD:
                 f"Mask file not found for subject '{self.subject}' at path '{mask_path}'."
             )
         return mask_path
+
+    def get_tr(self, task: str) -> float:
+        """
+        Get the TR for a specific task in the NSD dataset. TR is not consistent across tasks in NSD, so we cannot set a single constant TR value for the dataset.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+
+        Returns
+        -------
+        float
+            The TR for the specified task.
+        """
+        if task not in self.TR_by_task:
+            raise ValueError(f"Task '{task}' not found in dataset.")
+        return self.TR_by_task[task]
 
     def _parse_func_file_list_components(
         self, file_list: list[str]

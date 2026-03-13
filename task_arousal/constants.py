@@ -27,8 +27,8 @@ SURFACE_RH = "templates/fsLR_den-32k_hemi-R_inflated.surf.gii"
 # TR (Repetition Time) in seconds
 TR_EUSKALIBUR = 1.5
 TR_PAN = 1.355
-TR_NSD = 1.333
-
+# note, that the TR for NSD is different for each task, TR is handled in the file mapper class rather than as a constant
+# rest TR: 1.333s, nsdimagery TR: 1.0s
 
 # expected columns in event dataframe
 EVENT_COLUMNS = ["onset", "duration", "trial_type"]

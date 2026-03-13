@@ -33,7 +33,6 @@ from task_arousal.constants import (
     PHYSIO_COLUMNS_NSD,  # physio columns to extract for NSD
     TR_EUSKALIBUR,  # TR for EuskalIBUR
     TR_PAN,  # TR for PAN
-    TR_NSD,  # TR for NSD
     SLICE_TIMING_REF,  # slice timing reference
 )
 
@@ -121,6 +120,14 @@ class PreprocessingPipeline:
                     "Skipping physiological preprocessing for this dataset has no effect - no physio data."
                 )
             skip_physio = True
+        # nsd has no physio data for nsdimagery dataset, but has physio data for rest dataset, so we only skip physio if the task is nsdimagery
+        elif self.dataset == "nsd":
+            if task == "nsdimagery":
+                if skip_physio:
+                    warnings.warn(
+                        "Skipping physiological preprocessing for this task in NSD dataset has no effect - no physio data for nsdimagery task."
+                    )
+                skip_physio = True
         # check that not both func and physio are skipped
         if skip_func and skip_physio:
             raise ValueError(
@@ -175,7 +182,10 @@ class PreprocessingPipeline:
                         f"{type(self.file_mapper)}"
                     )
                 fwhm = FWHM_NSD
-                tr = TR_NSD
+                # TR is handled in the file mapper class for NSD since it differs by task, we retrieve it from the file mapper here
+                tr = self.file_mapper.get_tr(task_proc)
+                # subject functional masks are different for each subject and are generated as part of the additional preprocessing steps, so
+                # we retrieve the subject-specific mask here rather than using a constant template mask as in the other datasets
                 mask = self.file_mapper.get_subject_mask()
                 resample = False
                 remove_dummy = False  # NSD data is already preprocessed and does not have dummy volumes, so we do not want to remove any volumes here
@@ -224,6 +234,13 @@ class PreprocessingPipeline:
 
             # physio preprocessing pipeline (EuskalIBUR and NSD only)
             if self.dataset in ["euskalibur", "nsd"] and not skip_physio:
+                # if NSD dataset and task is nsdimagery, skip physio preprocessing since there is no physio data for that task
+                if self.dataset == "nsd" and task_proc == "nsdimagery":
+                    if verbose:
+                        print(
+                            "Skipping physiological preprocessing for nsdimagery task in NSD dataset - no physio data available."
+                        )
+                    continue
                 # get physio files (and JSON sidecars) for task
                 physio_files = self.file_mapper.get_physio_files(
                     task_proc, return_json=True, sessions=sessions
@@ -248,7 +265,7 @@ class PreprocessingPipeline:
                         assert isinstance(self.file_mapper, FileMapperNSD)
                         # NSD physio files are organized by session, but fMRI files are not, so we need to
                         # find the matching fMRI file by matching the session identifier in the file name
-                        # we pass just the pulse physio file to the parser since some NSD physio files are missing the json sidecar,
+                        # we pass just the pulse physio file to the parser since NSD physio files are missing the json sidecar,
                         # and we just need the session identifier which is in the file name
                         file_entities = (
                             self.file_mapper._parse_func_file_list_components(

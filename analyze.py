@@ -22,13 +22,12 @@ from task_arousal.dataset.dataset_euskalibur import (
     MOTOR_CONDITIONS as MOTOR_CONDITIONS_EUSKALIBUR,
 )
 from task_arousal.dataset.dataset_pan import DatasetPan, PAN_CONDITIONS
-from task_arousal.dataset.dataset_nsd import DatasetNsd
+from task_arousal.dataset.dataset_nsd import DatasetNsd, NSDIMAGERY_CONDITIONS
 
 from task_arousal.dataset.dataset_utils import DatasetLoad
 from task_arousal.constants import (
     TR_EUSKALIBUR,
     TR_PAN,
-    TR_NSD,
 )
 
 # define output directory
@@ -82,7 +81,8 @@ TASKS_EVENT_PAN = [
     "vmsit",
 ]
 # define NSD tasks (just rest task right now)
-TASKS_NSD = ["rest"]
+TASKS_NSD = ["rest", "nsdimagery"]
+TASKS_EVENT_NSD = ["nsdimagery"]
 
 # define analyses to perform
 ANALYSES = ["dlm_physio", "dlm_event", "pca"]
@@ -134,7 +134,8 @@ def main(
         else:
             tasks = TASKS_EUSKALIBUR
             tasks_event = TASKS_EVENT_EUSKALIBUR
-        tr = TR_EUSKALIBUR
+        # create dict mapping task to TR - this is the same for each task in EuskalIBUR dataset
+        tr = {task: TR_EUSKALIBUR for task in tasks}
         physio_labels = PHYSIO_LABELS_EUSKALIBUR
         # For EuskalIBUR, subject is guaranteed to be non-None
         _subject: str = subject
@@ -155,7 +156,8 @@ def main(
         else:
             tasks = TASKS_PAN
             tasks_event = TASKS_EVENT_PAN
-        tr = TR_PAN
+        # create dict mapping task to TR - this is the same for each task in PAN dataset
+        tr = {task: TR_PAN for task in tasks}
         physio_labels = None  # PAN dataset does not have physio signals
         # For PAN, subject is guaranteed to be non-None
         _subject: str = subject
@@ -169,11 +171,12 @@ def main(
             if task not in TASKS_NSD:
                 raise ValueError(f"Task {task} not recognized for NSD dataset")
             tasks = [task]
-            tasks_event = []
+            tasks_event = [task] if task in TASKS_EVENT_NSD else []
         else:
             tasks = TASKS_NSD
-            tasks_event = []
-        tr = TR_NSD
+            tasks_event = TASKS_EVENT_NSD
+        # TR is different for each task in NSD dataset, so we will handle TR in the file mapper class rather than as a constant
+        tr = {task: ds.file_mapper.get_tr(task) for task in tasks}
 
         physio_labels = PHYSIO_LABELS_NSD
         # For NSD, subject is guaranteed to be non-None
@@ -208,17 +211,24 @@ def main(
                     f"PCA analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
             # perform DLM analysis with physiological regressors for tasks with physio signals
-            if "dlm_physio" in _analysis and physio_labels is not None:
-                _dlm_physio(dataset, data, ds, tr, physio_labels, _subject, task, space)
+            # the NSDimagery dataset does not have physiological signals, so we will skip DLM with physio analysis for NSD dataset
+            if dataset == "nsd" and task == "nsdimagery":
+                print(
+                    f"Skipping DLM with physiological regressors analysis for dataset {dataset}, subject {_subject}, task {task} since NSD dataset does not have physiological signals"
+                )
+            elif "dlm_physio" in _analysis and physio_labels is not None:
+                _dlm_physio(
+                    dataset, data, ds, tr[task], physio_labels, _subject, task, space
+                )
                 print(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
-    # only perform DLM and bilinear regression analyses for tasks with event conditions
-    if any(a in _analysis for a in ["dlm_event", "bilinear"]):
+    # only perform DLM analyses for tasks with event conditions
+    if any(a in _analysis for a in ["dlm_event"]):
         for task in tasks_event:
             print(
-                f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event and bilinear regression analyses"
+                f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event analyses"
             )
             data: DatasetLoad = ds.load_data(
                 task=task, func_type=space, concatenate=False
@@ -226,7 +236,7 @@ def main(
 
             if "dlm_event" in _analysis:
                 # perform DLM analysis with event regressors
-                _dlm_event(dataset, data, ds, tr, _subject, task, space)
+                _dlm_event(dataset, data, ds, tr[task], _subject, task, space)
                 print(
                     f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
@@ -274,11 +284,18 @@ def _dlm_event(
             conditions = MOTOR_CONDITIONS_EUSKALIBUR
         else:
             raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
-    else:
+    elif dataset == "pan":
         if task in PAN_CONDITIONS:
             conditions = PAN_CONDITIONS[task]["conditions"]
         else:
             raise ValueError(f"Task {task} not recognized for PAN dataset")
+    elif dataset == "nsd":
+        if task == "nsdimagery":
+            conditions = NSDIMAGERY_CONDITIONS
+        else:
+            raise ValueError(f"Task {task} not recognized for NSD dataset")
+    else:
+        raise ValueError(f"Dataset {dataset} not recognized")
 
     # estimate DLM with event regressors with default parameters
     dlm = DistributedLagEventModel(tr=tr)

@@ -9,7 +9,6 @@ import pandas as pd
 import nibabel as nib
 import numpy as np
 
-from task_arousal.constants import TR_NSD
 from task_arousal.io.file import FileMapperNSD
 from .dataset_utils import (
     load_physio as _load_physio,
@@ -17,6 +16,8 @@ from .dataset_utils import (
     to_img as _to_img,
     DatasetLoad,
 )
+
+NSDIMAGERY_CONDITIONS = ["att"]
 
 
 class DatasetNsd:
@@ -76,7 +77,7 @@ class DatasetNsd:
             Default is True.
         bandpass : tuple of float | None, optional
             If provided, apply a Butterworth bandpass filter with these (low, high) frequencies in Hz.
-            TR is assumed to be 1.355s for PAN dataset. Default is None.
+            Default is None.
         load_func : bool, optional
             Whether to load fMRI data. Since this dataset only contains fMRI data,
             this parameter is kept for API consistency. Parameter is ignored. Default is True.
@@ -86,17 +87,29 @@ class DatasetNsd:
             Whether to print progress messages. Default is True.
         """
         if func_type == "surface":
-            raise NotImplementedError(
-                "Surface data is not available for NSD dataset. This method is not implemented for surface data."
-            )
+            raise NotImplementedError("Surface data is not available for NSD dataset.")
         # if task is not None, ensure it's an available task
         if task not in self.tasks:
             raise ValueError(
                 f"Task '{task}' is not available for subject '{self.subject}'."
             )
-        # get conditions for task
-        conditions = []
-        has_events = False
+        # get parameters for task
+        if task == "nsdimagery":
+            conditions = ["att"]
+            has_events = True
+            # NSD imagery doesn't have physio data, skip loading and print warning if requested
+            if verbose and load_physio:
+                print(
+                    f"Physiological data is not available for task '{task}' in NSD dataset. Skipping physio loading."
+                )
+            load_physio = False
+        elif task == "rest":
+            conditions = []
+            has_events = False
+        else:
+            raise ValueError(f"Task '{task}' is not recognized.")
+
+        tr = self.file_mapper.get_tr(task)
 
         # print processing info - normalize, bandpass
         if verbose:
@@ -166,11 +179,10 @@ class DatasetNsd:
                         if verbose:
                             print(
                                 f"No physiological file found for session '{session}' and task "
-                                f"{task}' and run '{run if run is not None else ''}'."
+                                f"'{task}' and run '{run if run is not None else ''}'."
                             )
                         continue
                     elif len(physio_files) > 1:
-                        breakpoint()
                         raise ValueError(
                             f"Multiple physiological files found for session '{session}' "
                             f"and task '{task}' and run '{run if run is not None else ''}'."
@@ -202,6 +214,7 @@ class DatasetNsd:
                 # load fMRI file into 2D array or 4D image
                 fmri_data = self.load_fmri(
                     fmri_files[0],
+                    tr=tr,
                     normalize=normalize,
                     bandpass=bandpass,
                     verbose=verbose,
@@ -211,10 +224,10 @@ class DatasetNsd:
                 dataset["physio"].append(physio_df)
                 # load event files
                 if has_events:
-                    onset_files = self.file_mapper.get_session_event_files(
+                    event_files = self.file_mapper.get_session_event_files(
                         session, task, run=run
                     )
-                    if len(onset_files) == 0:
+                    if len(event_files) == 0:
                         print(
                             f"Warning: No event file found for session '{session}' "
                             f"and task '{task}'."
@@ -222,7 +235,7 @@ class DatasetNsd:
                         continue
                     # convert event file to dataframe
                     event_df = self.events_to_df(
-                        fp_onsets=onset_files,  # type: ignore
+                        event_fp=event_files[0],  # type: ignore
                         session=session,
                         task=task,
                     )
@@ -248,29 +261,63 @@ class DatasetNsd:
 
     def events_to_df(
         self,
-        fp_onsets: List[str],
+        event_fp: str,
         task: str,
         session: str,
     ) -> pd.DataFrame:
         """
-        Convert 1D onset files (from AFNI) to a pandas DataFrame. Durations are
-        set in the conditions .json file.
+        The 'preprocessed' design files provided by the NSD authors are in a format difficult to
+        use with standard GLM software (e.g. in Nilearn) - sampled at the functional time points with
+        1s as onsets(?). To leverage a more standard design file format, we download the raw BIDS design
+        files associated with each run in standard format: trial_type, duration, onset, etc. This should
+        be fine as long as no volumes were removed from the functional scans in the preprocessing
+        (that would need to be accounted for in the timing of the design files).
 
         Parameters
         ----------
-        fp_onsets : List[str]
-            The paths to the event onset .1D files.
+        event_fp : str
+            The path to the BIDS event file.
         session : str
             The session identifier.
+        task : str
+            The task identifier. The only task with events currently is 'nsdimagery'.
 
         Returns
         -------
         pd.DataFrame
             The event data as a pandas DataFrame.
         """
-        raise NotImplementedError(
-            "Event data is not available for NSD dataset. This method is not implemented."
+        # if task is not nsdimagery, raise error since no events are available
+        if task != "nsdimagery":
+            raise ValueError(
+                f"Events are only available for 'nsdimagery' task in NSD dataset, but got '{task}'."
+            )
+        # load into pandas dataframe
+        event_df_orig = pd.read_csv(event_fp, delimiter="\t")
+        if event_df_orig.empty:
+            raise ValueError(
+                f"No event data found in event file '{event_fp}' for task '{task}' in NSD dataset."
+            )
+        # create a grouper index to set adjacent cue and present trials to the same trial number, since we want to model them as one event
+        event_df_orig["trial_group"] = (
+            event_df_orig["trial_type"] == "attention_cue"
+        ).cumsum()
+        # group by trial group and aggregate onsets and durations, taking the first onset and summing durations, and taking the first trial type (which will be 'attention_cue', but we will rename to 'att' in the next step)
+        event_df_agg = (
+            event_df_orig.groupby("trial_group").agg(
+                {
+                    "onset": "first",
+                    "duration": "sum",
+                    "trial_type": "first",
+                }
+            )
+        ).reset_index(drop=True)
+        # aggregate trial types 'attention_cue' and 'present' into 'att' for NSD imagery task
+        event_df_agg["trial_type"] = event_df_agg["trial_type"].replace(
+            {"attention_cue": "att", "present": "att"}
         )
+
+        return event_df_agg
 
     def load_physio(self, fp: str, normalize: bool = False) -> pd.DataFrame:
         """
@@ -293,6 +340,7 @@ class DatasetNsd:
     def load_fmri(
         self,
         fp: str,
+        tr: float,
         normalize: bool = False,
         bandpass: tuple[float, float] | None = None,
         verbose: bool = True,
@@ -306,7 +354,7 @@ class DatasetNsd:
             mask_img=self.mask,  # type: ignore
             normalize=normalize,
             bandpass=bandpass,
-            tr=TR_NSD,
+            tr=tr,
             verbose=verbose,
         )
 
