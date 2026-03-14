@@ -42,9 +42,9 @@ DUMMY_VOLUMES = 10
 # High-pass filter cutoff frequency for fmri
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
-FWHM_EUSKALIBUR = 4  # in mm
+FWHM_EUSKALIBUR = 0  # in mm - no smoothing for esukalibur
 FWHM_PAN = 4  # in mm
-FWHM_NSD = 0  # in mm
+FWHM_NSD = 0  # in mm - no smoothing for NSD
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = [
     "respiratory_effort",
