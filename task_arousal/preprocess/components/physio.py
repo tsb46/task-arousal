@@ -171,7 +171,7 @@ def physio_pipeline(
                     fmri_tr=tr,
                     slicetiming_ref=slicetiming_ref,
                 )
-                # finally, band-pass filter to match fMRI bandpass
+                # finally, high-pass filter to match fMRI highpass
                 feat_ts_bandpassed = nk.signal_filter(
                     feat_ts_resampled,
                     sampling_rate=1 / tr,  # type: ignore
