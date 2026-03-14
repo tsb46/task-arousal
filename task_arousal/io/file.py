@@ -907,8 +907,12 @@ class FileMapperNSD:
         list of str
             A list of session identifiers.
         """
-        # get sessions from task_runs dict
-        sessions = list(self.tasks_runs[task].keys())
+        # get sessions from task_runs dict - remove sessions with no runs for this task
+        sessions = [
+            ses
+            for ses, runs_list in self.tasks_runs[task].items()
+            if len(runs_list) > 0
+        ]
         return sessions
 
     def get_session_event_files(
