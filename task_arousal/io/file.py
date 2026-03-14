@@ -112,6 +112,7 @@ class FileMapperBids:
         task: str,
         sessions: List[str] | None = None,
         preproc_type: Literal["orig", "final"] = "orig",
+        echos: bool = False,
         func_type: Literal["volume", "surface"] = "volume",
     ) -> list[str]:
         """
@@ -128,6 +129,11 @@ class FileMapperBids:
             with the 'preproc' description (output of fMRIPrep preprocessing).
             'final' returns files with the 'preprocfinal' description
             (output of additional final preprocessing steps).
+        echos: bool
+            Whether to include 'raw' echos files with the 'preproc' description that are output from fMRIPrep when multiple echoes are present.
+            Only applies to 'orig' preproc_type and will be ignored if preproc_type is 'final' since echo
+            files do not have a 'preprocfinal' description. In the same manner, the echo files will be ignored for surface data since
+            surface files.
         func_type : {'volume', 'surface'}
             The type of functional data. 'volume' returns volumetric files
             with the '.nii.gz' extension. 'surface' returns surface files
@@ -145,8 +151,14 @@ class FileMapperBids:
             if preproc_type == "orig":
                 desc = "preproc"
             elif preproc_type == "final":
+                if echos:
+                    raise ValueError(
+                        "Raw echo files are not available in final preprocessing output"
+                    )
                 desc = "preprocfinal"
         elif func_type == "surface":
+            if echos:
+                raise ValueError("Raw echo files are not available as surface files")
             extension = ".dtseries.nii"
             # surface files do not have 'preproc' desc in fmripep output
             if preproc_type == "orig":
@@ -169,12 +181,17 @@ class FileMapperBids:
             if len(runs) > 1:
                 for run in runs:
                     files = self.get_session_fmri_files(
-                        session, task, run=run, desc=desc, extension=extension
+                        session,
+                        task,
+                        run=run,
+                        desc=desc,
+                        extension=extension,
+                        echos=echos,
                     )
                     fmri_files.extend(files)
             else:
                 files = self.get_session_fmri_files(
-                    session, task, desc=desc, extension=extension
+                    session, task, desc=desc, extension=extension, echos=echos
                 )
                 fmri_files.extend(files)
         return fmri_files
@@ -419,6 +436,7 @@ class FileMapperBids:
         ped: str | None = None,
         desc: Literal["preproc", "preprocfinal"] | None = "preproc",
         extension: str = ".nii.gz",
+        echos: bool = False,
     ) -> list[str]:
         """
         Get the fMRI files for a specific session and task.
@@ -443,6 +461,11 @@ class FileMapperBids:
         extension : str
             The file extension to filter files. Defaults to '.nii.gz' for
             volumetric fMRI files. Use '.dtseries.nii' for surface fMRI files.
+        echos: bool
+            Whether to include 'raw' echos files with the 'preproc' description that are output from fMRIPrep when multiple echoes are present.
+            Only applies to 'orig' preproc_type and will be ignored if preproc_type is 'final' since echo
+            files do not have a 'preprocfinal' description. In the same manner, the echo files will be ignored for surface data since
+            echo files are not available as surface files.
 
         Returns
         -------
@@ -465,7 +488,6 @@ class FileMapperBids:
             desc=desc,
             echo=None,
         )
-
         if ped is not None:
             filenames = [f.path for f in bids_files if f"dir-{ped}" in f.filename]
         else:
