@@ -1,9 +1,7 @@
 """
 Class for managing and loading preprocessed dataset files for
-a given subject in the Precision Targeting of Association Networks (PAN) dataset.
+a given subject in the Natural Scenes Dataset (NSD).
 """
-
-import json
 
 from typing import List, Literal
 
@@ -11,27 +9,26 @@ import pandas as pd
 import nibabel as nib
 import numpy as np
 
-from task_arousal.constants import MASK_PAN, DUMMY_VOLUMES, TR_PAN
-from task_arousal.io.file import FileMapperBids
+from task_arousal.io.file import FileMapperNSD
 from .dataset_utils import (
+    load_physio as _load_physio,
     load_fmri as _load_fmri,
     to_img as _to_img,
     DatasetLoad,
 )
 
-# Conditions for PAN tasks
-PAN_CONDITIONS = json.load(open("task_arousal/dataset/pan_conditions.json", "r"))
+NSDIMAGERY_CONDITIONS = ["att"]
 
 
-class DatasetPan:
+class DatasetNsd:
     """
     Class for managing and loading preprocessed dataset files for a given subject in
-    the PAN dataset.
+    the NSD dataset.
     """
 
     def __init__(self, subject: str):
         """
-        Initialize the Dataset class for a specific subject in the PAN dataset.
+        Initialize the Dataset class for a specific subject in the NSD dataset.
 
         Parameters
         ----------
@@ -40,13 +37,13 @@ class DatasetPan:
         """
         self.subject = subject
         # map file paths associated to subject
-        self.file_mapper = FileMapperBids(dataset="pan", subject=subject)
+        self.file_mapper = FileMapperNSD(subject=subject)
         # get available tasks from mapper
         self.tasks = self.file_mapper.tasks
         # get available sessions from mapper
         self.sessions = self.file_mapper.sessions
         # attach mask to instance
-        self.mask = nib.nifti1.load(MASK_PAN)
+        self.mask = self.file_mapper.get_subject_mask()
 
     def load_data(
         self,
@@ -57,7 +54,7 @@ class DatasetPan:
         normalize: bool = True,
         bandpass: tuple[float, float] | None = None,
         load_func: bool = True,
-        load_physio: bool = False,
+        load_physio: bool = True,
         verbose: bool = True,
     ) -> DatasetLoad:
         """
@@ -65,11 +62,10 @@ class DatasetPan:
 
         Parameters
         ----------
+        func_type : Literal["volume", "surface"], optional
+            The type of functional data, either "volume" or "surface". "Surface" is not currently supported for NSD dataset. Default is "volume".
         task : str
             The task identifier.
-        func_type : Literal["volume", "surface"], optional
-            The type of functional data to load. Default is "volume". Surface space is only available for the EuskalIBUR dataset, parameter
-            is kept for API consistency, but if "surface" is selected for PAN, an error will be raised.
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
@@ -81,33 +77,39 @@ class DatasetPan:
             Default is True.
         bandpass : tuple of float | None, optional
             If provided, apply a Butterworth bandpass filter with these (low, high) frequencies in Hz.
-            TR is assumed to be 1.355s for PAN dataset. Default is None.
+            Default is None.
         load_func : bool, optional
             Whether to load fMRI data. Since this dataset only contains fMRI data,
             this parameter is kept for API consistency. Parameter is ignored. Default is True.
         load_physio : bool, optional
-            No physiological data. Kept for API consistency. Parameter is ignored. Default is False.
+            Whether to load physiological data. Default is True.
         verbose : bool, optional
             Whether to print progress messages. Default is True.
         """
-        # if func_type is surface, raise error since PAN dataset does not have surface data
         if func_type == "surface":
-            raise ValueError("Surface space is not available for the PAN dataset.")
+            raise NotImplementedError("Surface data is not available for NSD dataset.")
         # if task is not None, ensure it's an available task
         if task not in self.tasks:
             raise ValueError(
                 f"Task '{task}' is not available for subject '{self.subject}'."
             )
-        # get conditions for task
-        try:
-            conditions = PAN_CONDITIONS[task]
+        # get parameters for task
+        if task == "nsdimagery":
+            conditions = ["att"]
             has_events = True
-        except KeyError:
-            print(
-                f"Warning: No conditions found for task '{task}'. Events will not be loaded."
-            )
+            # NSD imagery doesn't have physio data, skip loading and print warning if requested
+            if verbose and load_physio:
+                print(
+                    f"Physiological data is not available for task '{task}' in NSD dataset. Skipping physio loading."
+                )
+            load_physio = False
+        elif task == "rest":
             conditions = []
             has_events = False
+        else:
+            raise ValueError(f"Task '{task}' is not recognized.")
+
+        tr = self.file_mapper.get_tr(task)
 
         # print processing info - normalize, bandpass
         if verbose:
@@ -143,6 +145,7 @@ class DatasetPan:
         # initialize dataset dictionary
         dataset = {
             "fmri": [],
+            "physio": [],
             "events": [],
         }
         # load files for each session
@@ -160,9 +163,41 @@ class DatasetPan:
             for run in runs_session:
                 if verbose and run is not None:
                     print(f"    Loading run '{run}'...")
+                # load physio data if requested
+                if not load_physio:
+                    if verbose:
+                        print("Skipping physio data loading...")
+                    physio_df = pd.DataFrame()
+                else:
+                    # load physio file
+                    physio_files = self.file_mapper.get_session_physio_files(
+                        session, task, run=run, desc="final"
+                    )
+                    # check if exactly one physio file is found
+                    if len(physio_files) == 0:
+                        # in some scenarios, physio may not be recorded, skip loading
+                        if verbose:
+                            print(
+                                f"No physiological file found for session '{session}' and task "
+                                f"'{task}' and run '{run if run is not None else ''}'."
+                            )
+                        continue
+                    elif len(physio_files) > 1:
+                        raise ValueError(
+                            f"Multiple physiological files found for session '{session}' "
+                            f"and task '{task}' and run '{run if run is not None else ''}'."
+                        )
+                    # ensure physio file is string
+                    assert isinstance(physio_files[0], str), (
+                        f"Expected physio file path to be a string, but got {type(physio_files[0])}."
+                    )
+                    # load physio file into dataframe
+                    physio_df = self.load_physio(physio_files[0], normalize=normalize)
+                # load fmri data, if requested
                 fmri_files = self.file_mapper.get_session_fmri_files(
-                    session, task, run=run, desc="preprocfinal"
+                    session, task, run=run, desc="final"
                 )
+
                 # if no fMRI file is found, raise error
                 if len(fmri_files) == 0:
                     # in some scenarios, fmri may be missing or artifacts, skip loading
@@ -179,18 +214,20 @@ class DatasetPan:
                 # load fMRI file into 2D array or 4D image
                 fmri_data = self.load_fmri(
                     fmri_files[0],
+                    tr=tr,
                     normalize=normalize,
                     bandpass=bandpass,
                     verbose=verbose,
                 )
                 # append data to dataset
                 dataset["fmri"].append(fmri_data)
+                dataset["physio"].append(physio_df)
                 # load event files
                 if has_events:
-                    onset_files = self.file_mapper.get_session_event_files(
+                    event_files = self.file_mapper.get_session_event_files(
                         session, task, run=run
                     )
-                    if len(onset_files) == 0:
+                    if len(event_files) == 0:
                         print(
                             f"Warning: No event file found for session '{session}' "
                             f"and task '{task}'."
@@ -198,7 +235,7 @@ class DatasetPan:
                         continue
                     # convert event file to dataframe
                     event_df = self.events_to_df(
-                        fp_onsets=onset_files,  # type: ignore
+                        event_fp=event_files[0],  # type: ignore
                         session=session,
                         task=task,
                     )
@@ -209,6 +246,10 @@ class DatasetPan:
             if verbose:
                 print("Concatenating data across sessions...")
 
+            # temporally concatenate physio data
+            dataset["physio"] = [
+                pd.concat(dataset["physio"], axis=0, ignore_index=True)
+            ]
             # temporally concatenate fmri data
             dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
 
@@ -220,46 +261,86 @@ class DatasetPan:
 
     def events_to_df(
         self,
-        fp_onsets: List[str],
+        event_fp: str,
         task: str,
         session: str,
     ) -> pd.DataFrame:
         """
-        Convert 1D onset files (from AFNI) to a pandas DataFrame. Durations are
-        set in the conditions .json file.
+        The 'preprocessed' design files provided by the NSD authors are in a format difficult to
+        use with standard GLM software (e.g. in Nilearn) - sampled at the functional time points with
+        1s as onsets(?). To leverage a more standard design file format, we download the raw BIDS design
+        files associated with each run in standard format: trial_type, duration, onset, etc. This should
+        be fine as long as no volumes were removed from the functional scans in the preprocessing
+        (that would need to be accounted for in the timing of the design files).
 
         Parameters
         ----------
-        fp_onsets : List[str]
-            The paths to the event onset .1D files.
+        event_fp : str
+            The path to the BIDS event file.
         session : str
             The session identifier.
+        task : str
+            The task identifier. The only task with events currently is 'nsdimagery'.
 
         Returns
         -------
         pd.DataFrame
             The event data as a pandas DataFrame.
         """
-        # loop through conditions of task to build event dataframe
-        event_timing = []
-        for c in PAN_CONDITIONS[task]["conditions"]:
-            c_onsets = _extract_timings_pan(fp_onsets=fp_onsets, task=task, condition=c)
-            duration = PAN_CONDITIONS[task]["duration"][c]
-
-            for onset in c_onsets:
-                event_timing.append((c, onset, duration))
-
-        event_df = pd.DataFrame(
-            event_timing, columns=["trial_type", "onset", "duration"]
+        # if task is not nsdimagery, raise error since no events are available
+        if task != "nsdimagery":
+            raise ValueError(
+                f"Events are only available for 'nsdimagery' task in NSD dataset, but got '{task}'."
+            )
+        # load into pandas dataframe
+        event_df_orig = pd.read_csv(event_fp, delimiter="\t")
+        if event_df_orig.empty:
+            raise ValueError(
+                f"No event data found in event file '{event_fp}' for task '{task}' in NSD dataset."
+            )
+        # create a grouper index to set adjacent cue and present trials to the same trial number, since we want to model them as one event
+        event_df_orig["trial_group"] = (
+            event_df_orig["trial_type"] == "attention_cue"
+        ).cumsum()
+        # group by trial group and aggregate onsets and durations, taking the first onset and summing durations, and taking the first trial type (which will be 'attention_cue', but we will rename to 'att' in the next step)
+        event_df_agg = (
+            event_df_orig.groupby("trial_group").agg(
+                {
+                    "onset": "first",
+                    "duration": "sum",
+                    "trial_type": "first",
+                }
+            )
+        ).reset_index(drop=True)
+        # aggregate trial types 'attention_cue' and 'present' into 'att' for NSD imagery task
+        event_df_agg["trial_type"] = event_df_agg["trial_type"].replace(
+            {"attention_cue": "att", "present": "att"}
         )
-        event_df = event_df.sort_values(by="onset")
-        # insert session column
-        event_df.insert(0, "session", session)
-        return event_df
+
+        return event_df_agg
+
+    def load_physio(self, fp: str, normalize: bool = False) -> pd.DataFrame:
+        """
+        Load the preprocessed physio data from a TSV file.
+
+        Parameters
+        ----------
+        fp : str
+            The path to the physio TSV file.
+        normalize : bool, optional
+            Whether to normalize (z-score) the data along the time dimension. Default is False.
+
+        Returns
+        -------
+        pd.DataFrame
+            The physio data as a pandas DataFrame.
+        """
+        return _load_physio(fp, normalize=normalize)
 
     def load_fmri(
         self,
         fp: str,
+        tr: float,
         normalize: bool = False,
         bandpass: tuple[float, float] | None = None,
         verbose: bool = True,
@@ -273,57 +354,26 @@ class DatasetPan:
             mask_img=self.mask,  # type: ignore
             normalize=normalize,
             bandpass=bandpass,
-            tr=TR_PAN,
+            tr=tr,
             verbose=verbose,
         )
 
     def to_img(
-        self, fmri_data: np.ndarray, func_type: Literal["volume", "surface"]
+        self, fmri_data: np.ndarray, func_type: Literal["volume", "surface"] = "volume"
     ) -> nib.nifti1.Nifti1Image:
         """
         Convert time x voxels array back to a 4D NIfTI image via shared utils.
+
+        Parameters
+        ----------
+        fmri_data : np.ndarray
+            The fMRI data as a 2D array of shape (time, voxels).
+        func_type : Literal["volume", "surface"], optional
+            The type of functional data, either "volume" or "surface". "Surface" is not currently supported for NSD dataset.
+            Default is "volume".
         """
         if func_type == "surface":
-            raise ValueError("Surface space is not available for the PAN dataset.")
+            raise NotImplementedError(
+                "Surface data is not available for NSD dataset. This method is not implemented for surface data."
+            )
         return _to_img(fmri_data, mask_img=self.mask)  # type: ignore
-
-
-def _extract_timings_pan(
-    fp_onsets: List[str],
-    task: str,
-    condition: str,
-) -> List[float]:
-    """
-    Extract onset timings for a specific condition from a PAN onset file.
-
-    Parameters
-    ----------
-    fp_onsets : List[str]
-        The paths to the event onset .1D files.
-    condition : str
-        The condition to extract timings for.
-
-    Returns
-    -------
-    List[float]
-        A list of onset timings for the specified condition.
-    """
-    # find onset files for condition
-    fp_condition_onset = [fp for fp in fp_onsets if f"{condition}.1D" in fp]
-    if len(fp_condition_onset) == 0:
-        raise ValueError(
-            f"No onset files found for condition: {condition} in {task} task"
-        )
-    elif len(fp_condition_onset) > 1:
-        raise ValueError(
-            f"Multiple onset files found for condition: {condition} in {task} task"
-        )
-    # load onset files for condition
-    with open(fp_condition_onset[0], "r") as f:
-        c_onsets = [float(o) for o in f.read().strip().split(" ")]
-
-    # subtract dummy volume duration from onsets
-    c_onsets = [o - (DUMMY_VOLUMES * TR_PAN) for o in c_onsets]
-    # remove onsets that are negative after dummy volume removal
-    c_onsets = [o for o in c_onsets if o >= 0]
-    return c_onsets
