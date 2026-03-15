@@ -11,7 +11,7 @@ from task_arousal.preprocess.pipeline import PreprocessingPipeline
 
 
 def main(
-    dataset: Literal["euskalibur", "pan", "nsd"],
+    dataset: Literal["euskalibur", "nsd"],
     subject: str | None = None,
     task: str | None = None,
     func_type: Literal["volume", "surface"] = "volume",
@@ -25,8 +25,8 @@ def main(
     else:
         subjects = [subject]
 
-    # preprocess by subject for EuskaliBUR and PAN
-    if dataset in ["euskalibur", "pan", "nsd"]:
+    # preprocess by subject for EuskaliBUR and NSD
+    if dataset in ["euskalibur", "nsd"]:
         for subject in subjects:
             print(f"Starting preprocessing for subject: {subject}")
             pipeline = PreprocessingPipeline(dataset, subject, func_type=func_type)
@@ -54,7 +54,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        choices=["euskalibur", "pan", "nsd"],
+        choices=["euskalibur", "nsd"],
         help="Dataset to perform preprocessing pipeline.",
     )
     parser.add_argument(
@@ -64,7 +64,7 @@ if __name__ == "__main__":
         required=False,
         default=None,
         help="Subject to perform preprocessing pipeline. "
-        "For BIDS datasets (euskalibur, pan), only the subject ID is needed, e.g., 001 (not sub-001). "
+        "For BIDS datasets (euskalibur), only the subject ID is needed, e.g., 001 (not sub-001). "
         "For NSD, the full subject ID is needed (e.g. subj01). If not provided, "
         "the pipeline will be run for all subjects in the dataset.",
     )
