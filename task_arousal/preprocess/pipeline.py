@@ -1,8 +1,8 @@
 """
 Preprocessing pipeline for fMRI and physiological data.
 
-fMRI volume or surface preprocessing is performed on outputs from fMRIPrep for EuskalIBUR, and Precision
-Association Networks, including:
+fMRI volume or surface preprocessing is performed on outputs from fMRIPrep for EuskalIBUR and
+Natural Scenes Dataset, including:
 
 1) Drop dummy volumes
 2) Detrending
@@ -28,11 +28,9 @@ import pandas as pd
 
 from task_arousal.constants import (
     MASK_EUSKALIBUR,  # brain mask for EuskalIBUR
-    MASK_PAN,  #  brain mask for PAN
     PHYSIO_COLUMNS_EUSKALIBUR,  # physio columns to extract for EuskalIBUR
     PHYSIO_COLUMNS_NSD,  # physio columns to extract for NSD
     TR_EUSKALIBUR,  # TR for EuskalIBUR
-    TR_PAN,  # TR for PAN
     SLICE_TIMING_REF,  # slice timing reference
 )
 
@@ -41,7 +39,6 @@ from task_arousal.constants import (
     DUMMY_VOLUMES,  # number of dummy volumes to drop
     HIGHPASS,  # high-pass filter cutoff frequency
     FWHM_EUSKALIBUR,  # smoothing FWHM for EuskalIBUR
-    FWHM_PAN,  # smoothing FWHM for PAN
     FWHM_NSD,  # smoothing FWHM for NSD
     PHYSIO_RESAMPLE_F,  # physio resample frequency
     SURFACE_LH,  # left hemisphere surface template
@@ -64,7 +61,7 @@ class PreprocessingPipeline:
 
     def __init__(
         self,
-        dataset: Literal["euskalibur", "pan", "nsd"],
+        dataset: Literal["euskalibur", "nsd"],
         subject: str,
         func_type: Literal["volume", "surface"] = "volume",
     ) -> None:
@@ -72,7 +69,7 @@ class PreprocessingPipeline:
 
         Parameters
         ----------
-            dataset (Literal['euskalibur', 'pan', 'nsd']): The dataset identifier.
+            dataset (Literal['euskalibur', 'nsd']): The dataset identifier.
             subject (str): The subject identifier.
             func_type (Literal['volume', 'surface'], optional): The type of functional data. Defaults to "volume".
         """
@@ -81,7 +78,7 @@ class PreprocessingPipeline:
         self.func_type: Literal["volume", "surface"] = func_type
 
         # map file paths associated to subject
-        if dataset in ("euskalibur", "pan"):
+        if dataset == "euskalibur":
             self.file_mapper = FileMapperBids(dataset=dataset, subject=subject)
         elif dataset == "nsd":
             self.file_mapper = FileMapperNSD(subject)
@@ -113,8 +110,8 @@ class PreprocessingPipeline:
         skip_physio : bool, optional
             Whether to skip physiological preprocessing. Defaults to False.
         """
-        # pan has no physio data
-        if self.dataset in ["pan"]:
+        # euskalibur has no physio data
+        if self.dataset == "euskalibur":
             if skip_physio:
                 warnings.warn(
                     "Skipping physiological preprocessing for this dataset has no effect - no physio data."
@@ -135,7 +132,7 @@ class PreprocessingPipeline:
             )
         if skip_func and verbose:
             print(f"Skipping fMRI preprocessing for subject '{self.subject}'...")
-        if skip_physio and verbose and self.dataset not in ["pan"]:
+        if skip_physio and verbose:
             print(
                 f"Skipping physiological preprocessing for subject '{self.subject}'..."
             )
@@ -168,13 +165,6 @@ class PreprocessingPipeline:
                 resample = False
                 remove_dummy = True
                 physio_columns = PHYSIO_COLUMNS_EUSKALIBUR
-            elif self.dataset == "pan":
-                fwhm = FWHM_PAN
-                tr = TR_PAN
-                mask = MASK_PAN
-                resample = True
-                remove_dummy = True
-                physio_columns = []  # PAN dataset does not have physio data, so no columns to extract
             elif self.dataset == "nsd":
                 if not isinstance(self.file_mapper, FileMapperNSD):
                     raise TypeError(
@@ -340,9 +330,9 @@ class PreprocessingPipeline:
             The original file path
         """
         # get output directory from original file path
-        # for the Euskalbur and PAND datasets, preprocessed files are saved in the
+        # for the Euskalbur dataset, preprocessed files are saved in the
         # same directory as original files. For NSD, preprocessed files are saved in a separate directory.
-        if self.dataset in ["euskalibur", "pan"]:
+        if self.dataset == "euskalibur":
             output_dir = self.file_mapper.get_out_directory(file_orig)
         elif self.dataset == "nsd":
             if not isinstance(self.file_mapper, FileMapperNSD):
@@ -416,9 +406,9 @@ class PreprocessingPipeline:
         # convert to dataframe
         physio_df = pd.DataFrame(physio_dict)
         # get output directory from original file path
-        if self.dataset in ["euskalibur", "pan"]:
+        if self.dataset == "euskalibur":
             assert isinstance(file_orig, str), (
-                "Expected file_orig to be a string for euskalibur and pan datasets"
+                "Expected file_orig to be a string for euskalibur dataset"
             )
             output_dir = self.file_mapper.get_out_directory(file_orig)
             # get file name from original file path

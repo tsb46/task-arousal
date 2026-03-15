@@ -21,13 +21,11 @@ from task_arousal.dataset.dataset_euskalibur import (
     SIMON_CONDITIONS,
     MOTOR_CONDITIONS as MOTOR_CONDITIONS_EUSKALIBUR,
 )
-from task_arousal.dataset.dataset_pan import DatasetPan, PAN_CONDITIONS
 from task_arousal.dataset.dataset_nsd import DatasetNsd, NSDIMAGERY_CONDITIONS
 
 from task_arousal.dataset.dataset_utils import DatasetLoad
 from task_arousal.constants import (
     TR_EUSKALIBUR,
-    TR_PAN,
 )
 
 # define output directory
@@ -51,37 +49,12 @@ PHYSIO_LABELS_NSD = [
 
 # define all tasks (exclude Motor task)
 TASKS_EUSKALIBUR = ["pinel", "simon", "motor", "rest", "breathhold"]
-TASKS_PAN = [
-    "audvisattn",
-    "audviswm",
-    "epiproj",
-    "langlocaud",
-    "langlocvis",
-    "msit",
-    "rest",
-    "spatialwm",
-    "tomfalse",
-    "tompain",
-    "verbalwm",
-    "vmsit",
-]
 # define tasks with event conditions
 TASKS_EVENT_EUSKALIBUR = ["pinel", "simon", "motor"]
-TASKS_EVENT_PAN = [
-    "audvisattn",
-    "audviswm",
-    "epiproj",
-    "langlocaud",
-    "langlocvis",
-    "msit",
-    "spatialwm",
-    "tomfalse",
-    "tompain",
-    "verbalwm",
-    "vmsit",
-]
+
 # define NSD tasks (just rest task right now)
 TASKS_NSD = ["rest", "nsdimagery"]
+# define NSD tasks weith event conditions
 TASKS_EVENT_NSD = ["nsdimagery"]
 
 # define analyses to perform
@@ -89,11 +62,11 @@ ANALYSES = ["dlm_physio", "dlm_event", "pca"]
 
 
 # define Dataset type
-Dataset = DatasetEuskalibur | DatasetPan | DatasetNsd
+Dataset = DatasetEuskalibur | DatasetNsd
 
 
 def main(
-    dataset: Literal["euskalibur", "pan", "nsd"],
+    dataset: Literal["euskalibur", "nsd"],
     subject: str | None,
     analysis: str | None,
     task: str | None,
@@ -104,7 +77,7 @@ def main(
 
     Parameters
     ----------
-    dataset : Literal["euskalibur", "pan", "nsd"]
+    dataset : Literal["euskalibur", "nsd"]
         Dataset to perform analysis pipeline on
     subject : str | None
         Subject to perform analysis pipeline on.
@@ -141,28 +114,6 @@ def main(
         _subject: str = subject
         # create output directory if it doesn't exist
         os.makedirs(OUT_DIRECTORY + "/euskalibur", exist_ok=True)
-    elif dataset == "pan":
-        if subject is None:
-            raise ValueError("Subject must be specified for PAN dataset")
-        ds = DatasetPan(subject=subject)
-        if task is not None:
-            if task not in TASKS_PAN:
-                raise ValueError(f"Task {task} not recognized for PAN dataset")
-            tasks = [task]
-            if task in TASKS_EVENT_PAN:
-                tasks_event = [task]
-            else:
-                tasks_event = []
-        else:
-            tasks = TASKS_PAN
-            tasks_event = TASKS_EVENT_PAN
-        # create dict mapping task to TR - this is the same for each task in PAN dataset
-        tr = {task: TR_PAN for task in tasks}
-        physio_labels = None  # PAN dataset does not have physio signals
-        # For PAN, subject is guaranteed to be non-None
-        _subject: str = subject
-        # create output directory if it doesn't exist
-        os.makedirs(OUT_DIRECTORY + "/pan", exist_ok=True)
     elif dataset == "nsd":
         if subject is None:
             raise ValueError("Subject must be specified for NSD dataset")
@@ -284,11 +235,6 @@ def _dlm_event(
             conditions = MOTOR_CONDITIONS_EUSKALIBUR
         else:
             raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
-    elif dataset == "pan":
-        if task in PAN_CONDITIONS:
-            conditions = PAN_CONDITIONS[task]["conditions"]
-        else:
-            raise ValueError(f"Task {task} not recognized for PAN dataset")
     elif dataset == "nsd":
         if task == "nsdimagery":
             conditions = NSDIMAGERY_CONDITIONS
@@ -441,7 +387,7 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        choices=["euskalibur", "pan", "nsd"],
+        choices=["euskalibur", "nsd"],
         help="Dataset to perform analysis pipeline on",
     )
     # add subject argument
@@ -451,7 +397,7 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="Subject to perform preprocessing pipeline. "
-        "For BIDS datasets (euskalibur, pan), only the subject ID is needed, e.g., 001 (not sub-001). "
+        "For BIDS datasets (euskalibur), only the subject ID is needed, e.g., 001 (not sub-001). "
         "For NSD, the full subject ID is needed (e.g. subj01).",
     )
     # add optional analysis argument (default: all analyses)

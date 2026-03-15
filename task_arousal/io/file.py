@@ -14,7 +14,6 @@ from bids import BIDSLayout
 
 from task_arousal.constants import (
     DATA_DIRECTORY_EUSKALIBUR,
-    DATA_DIRECTORY_PAN,
     DATA_DIRECTORY_NSD,
     IS_DERIVED,
 )
@@ -25,13 +24,13 @@ class FileMapperBids:
     Maps file paths for a specific subject's fMRI and physiological data in a BIDS dataset.
     """
 
-    def __init__(self, dataset: Literal["euskalibur", "pan"], subject: str):
+    def __init__(self, dataset: Literal["euskalibur"], subject: str):
         """
         Initialize the FileMapper for a specific subject.
 
         Parameters
         ----------
-        dataset : {'euskalibur', 'pan'}
+        dataset : {'euskalibur'}
             The dataset name.
         subject : str
             The subject identifier.
@@ -69,26 +68,15 @@ class FileMapperBids:
                         derivatives=True,
                         ignore=[ignore_pattern],
                     )
-            elif self.dataset == "pan":
-                self.layout = BIDSLayout(
-                    DATA_DIRECTORY_PAN,
-                    ignore=[ignore_pattern],
-                    is_derivative=True,
-                    derivatives=True,
-                )
             else:
-                raise ValueError("Dataset must be 'euskalibur' or 'pan'")
+                raise ValueError("Dataset must be 'euskalibur' for FileMapperBids.")
 
         # get available subjects in the dataset
         self.available_subjects = self.layout.get_subjects()
         # check whether any subjects are found
         if not self.available_subjects:
             raise RuntimeError(
-                f"No subjects found in BIDS directory: {
-                    DATA_DIRECTORY_EUSKALIBUR
-                    if self.dataset == 'euskalibur'
-                    else DATA_DIRECTORY_PAN
-                }"
+                f"No subjects found in BIDS directory: {DATA_DIRECTORY_EUSKALIBUR if self.dataset == 'euskalibur' else None}"
             )
 
         # check if subject is valid
@@ -391,8 +379,8 @@ class FileMapperBids:
         return sessions
 
     def get_session_event_files(
-        self, session: str, task: str, run: str | None = None, ped: str | None = None
-    ) -> list[tuple[str, str]] | list[str]:
+        self, session: str, task: str, run: str | None = None
+    ) -> list[tuple[str, str]]:
         """
         Get the event files for a specific session and task.
 
@@ -404,23 +392,14 @@ class FileMapperBids:
             The task identifier.
         run : str, optional
             The run identifier. If provided, only files for this run will be returned.
-        ped : str, optional
-            The phase encoding direction of the fMRI data. If provided, only files
-            with this direction will be returned. Options are 'ap' (anterior-posterior)
-            and 'pa' (posterior-anterior).
 
         Returns
         -------
-        list of tuple of str | list of str
-            A list of onset and duration file path tuples (onset, duration) - for Euskalibur,
-            or a list of event file paths - for PAN.
+        list of tuple of str
+            A list of onset and duration file path tuples (onset, duration) - for Euskalibur.
         """
         if self.dataset == "euskalibur":
             return _get_session_event_files_euskalibur(
-                self.layout, self.subject, session, task, run=run
-            )
-        elif self.dataset == "pan":
-            return _get_session_event_files_pan(
                 self.layout, self.subject, session, task, run=run
             )
         else:
@@ -433,7 +412,6 @@ class FileMapperBids:
         session: str,
         task: str,
         run: str | None = None,
-        ped: str | None = None,
         desc: Literal["preproc", "preprocfinal"] | None = "preproc",
         extension: str = ".nii.gz",
         echos: bool = False,
@@ -449,10 +427,6 @@ class FileMapperBids:
             The task identifier.
         run : str, optional
             The run identifier. If provided, only files for this run will be returned.
-        ped : str, optional
-            The phase encoding direction of the fMRI data. If provided, only files
-            with this direction will be returned. Options are 'ap' (anterior-posterior)
-            and 'pa' (posterior-anterior).
         desc : Literal['preproc', 'preprocfinal'] | None, optional
             The description entity to filter files. Defaults to 'preproc' for
             the output of fMRIPrep preprocessing. Use 'preprocfinal' for
@@ -472,12 +446,6 @@ class FileMapperBids:
         list of str
             A list of fMRI file paths.
         """
-        if ped is not None:
-            if ped not in ("ap", "pa"):
-                raise ValueError("ped must be 'ap' or 'pa'")
-
-        # for some reason, filtering by PhaseEncodingDirection entity does not work for some files
-        # so we will filter manually after retrieving the files
         bids_files = self.layout.get(
             subject=self.subject,
             session=session,
@@ -488,10 +456,8 @@ class FileMapperBids:
             desc=desc,
             echo=None,
         )
-        if ped is not None:
-            filenames = [f.path for f in bids_files if f"dir-{ped}" in f.filename]
-        else:
-            filenames = [f.path for f in bids_files]
+
+        filenames = [f.path for f in bids_files]
 
         return filenames
 
@@ -938,7 +904,7 @@ class FileMapperNSD:
         return sessions
 
     def get_session_event_files(
-        self, session: str, task: str, run: str | None = None, ped: str | None = None
+        self, session: str, task: str, run: str | None = None
     ) -> list[str]:
         """
         Get NSD event files for a specific session and task. Only the nsdimagery
@@ -955,10 +921,6 @@ class FileMapperNSD:
             The run identifier. If provided, only files for this run will be returned. The NSD imagery
             event files are organized by task (attA, attB, attC) that correspond to runs '02', '05', '08',
             in the functional files, respectively.
-        ped : str, optional
-            The phase encoding direction of the fMRI data. This parameter is not used
-            in the NSD dataset, as event files are not organized by phase encoding direction.
-            Kept for compatibility with other FileMapper classes.
 
         Returns
         -------
@@ -999,7 +961,6 @@ class FileMapperNSD:
         session: str,
         task: str,
         run: str | None = None,
-        ped: str | None = None,
         desc: Literal["orig", "final"] = "orig",
         extension: str = ".nii.gz",
     ) -> list[str]:
@@ -1016,10 +977,6 @@ class FileMapperNSD:
             The task identifier.
         run : str, optional
             The run identifier. If provided, only files for this run will be returned.
-        ped : str, optional
-            The phase encoding direction of the fMRI data. This parameter is not used
-            in the NSD dataset, as event files are not organized by phase encoding direction.
-            Kept for compatibility with other FileMapper classes.
         desc : Literal['orig', 'final']
             Whether to pull minimally processed ('orig') or fully processed ('final') files.
             Defaults to 'orig'. This parameter is repurposed from description entity
@@ -1240,7 +1197,7 @@ def get_dataset_subjects(dataset: str) -> List[str]:
     Parameters
     ----------
     dataset : str
-        The dataset name. Options are 'euskalibur', 'pan', or 'nsd'.
+        The dataset name. Options are 'euskalibur' or 'nsd'.
 
     Returns
     -------
@@ -1259,17 +1216,10 @@ def get_dataset_subjects(dataset: str) -> List[str]:
                 derivatives=True,
             )
         subjects = layout.get_subjects()
-    elif dataset == "pan":
-        layout = BIDSLayout(
-            DATA_DIRECTORY_PAN,
-            is_derivative=True,
-            derivatives=True,
-        )
-        subjects = layout.get_subjects()
     elif dataset == "nsd":
         subjects = FileMapperNSD.available_subjects
     else:
-        raise ValueError("Dataset must be 'euskalibur', 'pan', or 'nsd'.")
+        raise ValueError("Dataset must be 'euskalibur' or 'nsd'.")
 
     return subjects
 
@@ -1323,36 +1273,3 @@ def _get_session_event_files_euskalibur(
         )
         fp_durations = [f.path for f in bids_files_duration]
     return list(zip(fp_onsets, fp_durations))
-
-
-def _get_session_event_files_pan(
-    layout: BIDSLayout, subject: str, session: str, task: str, run: str | None = None
-) -> list[str]:
-    """
-    Get the event files for a specific session and task for PAN dataset. Event files
-    are in BIDS format.
-
-    Parameters
-    ----------
-    layout : BIDSLayout
-        The BIDS layout object.
-    subject : str
-        The subject identifier.
-    session : str
-        The session identifier.
-    task : str
-        The task identifier.
-    run : str, optional
-        The run identifier. If provided, only files for this run will be returned.
-
-    Returns
-    -------
-    list of str
-        A list of event file paths.
-    """
-    ev_files = layout.get(
-        subject=subject, session=session, task=task, extension=".1D", run=run
-    )
-    fp_events = [f.path for f in ev_files]
-
-    return fp_events
