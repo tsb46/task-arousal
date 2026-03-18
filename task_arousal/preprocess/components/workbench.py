@@ -1,5 +1,5 @@
 # type: ignore
-"""Workbench (V1.4.2) command line utilities"""
+"""Workbench (V2.0.1) command line utilities"""
 
 import nipype.interfaces.workbench as wb
 
