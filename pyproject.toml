@@ -18,6 +18,7 @@ dependencies = [
     "pybids==0.19.0",
     "pyqt5>=5.15.11",
     "python-dotenv>=1.1.1",
+    "tedana>=26.0.0",
 ]
 
 [project.optional-dependencies]
