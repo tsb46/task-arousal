@@ -13,9 +13,10 @@ from typing import List, Tuple, Literal
 from bids import BIDSLayout
 
 from task_arousal.constants import (
-    DATA_DIRECTORY_EUSKALIBUR,
-    DATA_DIRECTORY_NSD,
-    IS_DERIVED,
+    DATA_DIRECTORY_EUSKALIBUR,  # path to data directory for Euskalibur dataset
+    DATA_DIRECTORY_NSD,  # path to data directory for NSD dataset
+    IS_DERIVED,  # flag indicating if the data should be searched in the 'derivatives' directory
+    ECHOS_EUSKALIBUR,  # list of echo times for the multi-echo fMRI data in the Euskalibur dataset
 )
 
 
@@ -95,12 +96,56 @@ class FileMapperBids:
                     subject=subject, session=session, task=task
                 )
 
+    def get_echo_files(
+        self,
+        task: str,
+        sessions: List[str] | None = None,
+    ) -> list[Tuple[str]]:
+        """
+        Get the separate echos from all fMRI files from all sessions for a specific task. Note,
+        these are the separate echo files that are input to the tedana T2* and S0 estimation.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+        sessions : list of str, optional
+            The sessions to include. If None, all sessions are included.
+
+        Returns
+        -------
+        list of tuple of str
+            A list of tuples, where each tuple contains the file paths for the separate echo files for a run.
+        """
+
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(
+                        f"Session '{session}' is not valid for subject '{self.subject}'."
+                    )
+
+        fmri_files = []
+        for session in sessions if sessions is not None else self.sessions:
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                for run in runs:
+                    files = self.get_session_echo_files(session, task, run=run)
+                    fmri_files.append(files)
+            else:
+                files = self.get_session_echo_files(session, task)
+                fmri_files.append(files)
+        return fmri_files
+
     def get_fmri_files(
         self,
         task: str,
         sessions: List[str] | None = None,
         preproc_type: Literal["orig", "final"] = "orig",
-        echos: bool = False,
+        me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
         func_type: Literal["volume", "surface"] = "volume",
     ) -> list[str]:
         """
@@ -117,11 +162,11 @@ class FileMapperBids:
             with the 'preproc' description (output of fMRIPrep preprocessing).
             'final' returns files with the 'preprocfinal' description
             (output of additional final preprocessing steps).
-        echos: bool
-            Whether to include 'raw' echos files with the 'preproc' description that are output from fMRIPrep when multiple echoes are present.
-            Only applies to 'orig' preproc_type and will be ignored if preproc_type is 'final' since echo
-            files do not have a 'preprocfinal' description. In the same manner, the echo files will be ignored for surface data since
-            surface files.
+        me_type: {'optcomb', 't2', 's0'}
+            The type of multi-echo functional file to retrieve. Only for multi-echo
+            datasets. This parameter is ignored for single-echo datasets. 'optcomb' returns the optimally combined
+            multi-echo functional files. 't2' returns the T2* map time series estimated from the multi-echo data.
+            's0' returns the S0 map time series estimated from the multi-echo data.
         func_type : {'volume', 'surface'}
             The type of functional data. 'volume' returns volumetric files
             with the '.nii.gz' extension. 'surface' returns surface files
@@ -132,6 +177,8 @@ class FileMapperBids:
         list of str
             A list of fMRI file paths.
         """
+        # TODO: for multi-echo datasets, add option to get T2* and S0 maps in addition to optimally combined functional data
+
         # set description and extension based on preprocessing type
         if func_type == "volume":
             extension = ".nii.gz"
@@ -139,14 +186,8 @@ class FileMapperBids:
             if preproc_type == "orig":
                 desc = "preproc"
             elif preproc_type == "final":
-                if echos:
-                    raise ValueError(
-                        "Raw echo files are not available in final preprocessing output"
-                    )
                 desc = "preprocfinal"
         elif func_type == "surface":
-            if echos:
-                raise ValueError("Raw echo files are not available as surface files")
             extension = ".dtseries.nii"
             # surface files do not have 'preproc' desc in fmripep output
             if preproc_type == "orig":
@@ -174,12 +215,11 @@ class FileMapperBids:
                         run=run,
                         desc=desc,
                         extension=extension,
-                        echos=echos,
                     )
                     fmri_files.extend(files)
             else:
                 files = self.get_session_fmri_files(
-                    session, task, desc=desc, extension=extension, echos=echos
+                    session, task, desc=desc, extension=extension
                 )
                 fmri_files.extend(files)
         return fmri_files
@@ -407,6 +447,62 @@ class FileMapperBids:
                 f"Event file retrieval not implemented for {self.dataset} dataset."
             )
 
+    def get_session_echo_files(
+        self,
+        session: str,
+        task: str,
+        run: str | None = None,
+    ):
+        """
+        Get the echo files for a specific session and task. Only for multi-echo datasets.
+
+        Parameters
+        ----------
+        session : str
+            The session identifier.
+        task : str
+            The task identifier.
+        run : str, optional
+            The run identifier. If provided, only files for this run will be returned.
+
+        Returns
+        -------
+        list of str
+            A list of echo file paths.
+        """
+        if self.dataset == "euskalibur":
+            echo_times = ECHOS_EUSKALIBUR
+        else:
+            raise NotImplementedError(
+                f"Echo file retrieval not implemented for {self.dataset} dataset."
+            )
+        # convert to echo labels (this assumes the echos are labeled in the BIDS files as 'echo-1',
+        # 'echo-2', etc. and that the order of echo times in ECHOS_EUSKALIBUR corresponds to the echo labels)
+        echo_labels = [f"{i + 1}" for i in range(len(echo_times))]
+        echo_files = []
+        for echo_label in echo_labels:
+            files = self.layout.get(
+                subject=self.subject,
+                session=session,
+                task=task,
+                run=run,
+                suffix="bold",
+                extension=".nii.gz",
+                desc="preproc",
+                echo=echo_label,
+            )
+            if len(files) == 0:
+                raise RuntimeError(
+                    f"No echo files found for subject '{self.subject}', session '{session}', task '{task}', run '{run}', echo '{echo_label}'."
+                )
+            elif len(files) > 1:
+                raise RuntimeError(
+                    f"Multiple echo files found for subject '{self.subject}', session '{session}', task '{task}', run '{run}', echo '{echo_label}'. Expected only one file."
+                )
+
+            echo_files.extend([f.path for f in files])
+        return echo_files
+
     def get_session_fmri_files(
         self,
         session: str,
@@ -414,7 +510,7 @@ class FileMapperBids:
         run: str | None = None,
         desc: Literal["preproc", "preprocfinal"] | None = "preproc",
         extension: str = ".nii.gz",
-        echos: bool = False,
+        me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
     ) -> list[str]:
         """
         Get the fMRI files for a specific session and task.
@@ -435,17 +531,23 @@ class FileMapperBids:
         extension : str
             The file extension to filter files. Defaults to '.nii.gz' for
             volumetric fMRI files. Use '.dtseries.nii' for surface fMRI files.
-        echos: bool
-            Whether to include 'raw' echos files with the 'preproc' description that are output from fMRIPrep when multiple echoes are present.
-            Only applies to 'orig' preproc_type and will be ignored if preproc_type is 'final' since echo
-            files do not have a 'preprocfinal' description. In the same manner, the echo files will be ignored for surface data since
-            echo files are not available as surface files.
+        me_type : {'optcomb', 't2', 's0'}
+            The type of multi-echo functional file to retrieve. Only for multi-echo
+            datasets. This parameter is ignored for single-echo datasets. 'optcomb' returns the optimally combined
+            multi-echo functional files. 't2' returns the T2* map time series estimated from the multi-echo data.
+            's0' returns the S0 map time series estimated from the multi-echo data. Defaults to 'optcomb'.
 
         Returns
         -------
         list of str
             A list of fMRI file paths.
         """
+        # TODO: for multi-echo datasets, add option to get T2* and S0 maps in addition to optimally combined functional data
+        if me_type:
+            raise NotImplementedError(
+                "Multi-echo file retrieval not yet implemented in get_session_fmri_files method. Use get_session_echo_files method for multi-echo datasets to retrieve separate echo files for T2* and S0 estimation."
+            )
+
         bids_files = self.layout.get(
             subject=self.subject,
             session=session,
@@ -454,7 +556,6 @@ class FileMapperBids:
             extension=extension,
             run=run,
             desc=desc,
-            echo=None,
         )
 
         filenames = [f.path for f in bids_files]
@@ -500,6 +601,50 @@ class FileMapperBids:
         )
         filenames = [f.path for f in bids_files]
         return filenames
+
+    def get_subject_mask(
+        self,
+        task: str | None = None,
+        session: str | None = None,
+        run: str | None = None,
+    ) -> str:
+        """
+        Get the subject functional mask file path by run, session and task.
+
+        Parameters
+        ----------
+        task : str, optional
+            The task identifier.
+        session : str, optional
+            The session identifier.
+        run : str, optional
+            The run identifier.
+
+
+        Returns
+        -------
+        str
+            The file path to the subject's functional brain mask.
+        """
+        bids_files = self.layout.get(
+            subject=self.subject,
+            session=session,
+            task=task,
+            run=run,
+            space=None,
+            suffix="mask",
+            extension=".nii.gz",
+        )
+
+        if not bids_files:
+            raise RuntimeError(
+                f"No brain mask file found for subject '{self.subject}' in dataset."
+            )
+        if len(bids_files) > 1:
+            raise RuntimeError(
+                f"Multiple brain mask files found for subject '{self.subject}' in dataset. Expected only one mask file per subject."
+            )
+        return bids_files[0].path  # assuming there is only one mask file per subject
 
 
 class FileMapperNSD:
@@ -591,6 +736,7 @@ class FileMapperNSD:
         sessions: List[str] | None = None,
         preproc_type: Literal["orig", "final"] = "orig",
         func_type: Literal["volume", "surface"] = "volume",
+        echo: bool = False,
     ) -> list[str]:
         """
         Get the fMRI files from all sessions for a specific task.
@@ -609,6 +755,9 @@ class FileMapperNSD:
             The type of functional data. Only volume files are available for NSD,
             so this parameter does not affect file retrieval but is included
             for API compatibility with FileMapperBids.
+        echo: bool
+            NSD is a single-echo dataset, so this parameter does not affect file retrieval
+            but is included for API compatibility with FileMapperBids.
 
 
         Returns
@@ -711,6 +860,36 @@ class FileMapperNSD:
             ]
 
         return physio_files
+
+    def get_echo_files(
+        self,
+        task: str,
+        sessions: List[str] | None = None,
+    ) -> list[Tuple[str]]:
+        """
+        Get the separate echos from all fMRI files from all sessions for a specific task. Note,
+        these are the separate echo files that are input to the tedana T2* and S0 estimation. NSD is a single-echo dataset,
+        so this method will return the same file paths as get_fmri_files method.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+        sessions : list of str, optional
+            The sessions to include. If None, all sessions are included.
+
+        Returns
+        -------
+        list of tuple of str
+            A list of tuples, where each tuple contains the file paths for the separate echo files for a run.
+        """
+        print(
+            "NSD is a single-echo dataset, so get_echo_files method will return the same file paths as get_fmri_files method."
+        )
+        # NSD is a single-echo dataset, so we will return the same file paths as get_fmri_files method
+        fmri_files = self.get_fmri_files(task=task, sessions=sessions)
+        echo_files = [(fmri_file,) for fmri_file in fmri_files]
+        return echo_files
 
     def get_event_files(
         self, task: str, sessions: List[str] | None = None
@@ -963,6 +1142,7 @@ class FileMapperNSD:
         run: str | None = None,
         desc: Literal["orig", "final"] = "orig",
         extension: str = ".nii.gz",
+        echo: bool = False,
     ) -> list[str]:
         """
         Get the fMRI files for a specific session and task. Parameters are consistent
@@ -984,6 +1164,9 @@ class FileMapperNSD:
         extension : str
             The file extension to filter files. Defaults to '.nii.gz' for
             volumetric fMRI files. Use '.dtseries.nii' for surface fMRI files.
+        echo: bool
+            NSD is a single-echo dataset, so this parameter does not affect file retrieval
+            but is included for API compatibility with FileMapperBids.
 
         Returns
         -------
@@ -1103,10 +1286,26 @@ class FileMapperNSD:
 
         return filenames
 
-    def get_subject_mask(self):
+    def get_subject_mask(
+        self,
+        task: str | None = None,
+        session: str | None = None,
+        run: str | None = None,
+    ) -> str:
         """
         Get the subject functional mask file path. NSD dataset provides a brain mask for each subject.
 
+        Parameters
+        ----------
+        task : str, optional
+            The task identifier. This parameter is included for API compatibility with FileMapperBids,
+            but is not used in this method since the same brain mask is used for all tasks in NSD dataset
+        session : str, optional
+            The session identifier. This parameter is included for API compatibility with FileMapperBids,
+            but is not used in this method since the same brain mask is used for all sessions in NSD dataset
+        run : str, optional
+            The run identifier. This parameter is included for API compatibility with FileMapperBids,
+            but is not used in this method since the same brain mask is used for all runs in NSD dataset
         Returns
         -------
         str
