@@ -19,7 +19,11 @@ from tedana.utils import make_adaptive_mask
 
 def fit_multiecho(fp_echos: List[str], echo_times: List[float], mask_fp: str):
     """
-    Estimate T2* and S0 from multi-echo fMRI data using a log-linear fit with tedana.
+    Estimate T2* and S0 from multi-echo fMRI data using a regularized log-linear fit.
+    The fit is performed in log space and includes a temporal smoothness penalty to
+    encourage smoothly varying T2* and S0 estimates over time. The number of echoes
+    included in the fit can vary across voxels based on an adaptive mask that excludes
+    echoes with poor signal quality.
 
     Parameters
     ----------
