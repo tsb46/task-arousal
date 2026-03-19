@@ -703,6 +703,7 @@ class PreprocessingPipeline:
             session=file_ents.get("session"),
             run=file_ents.get("run"),
             desc="coreg",
+            ext="txt",
         )
         if native_to_t1 is None or len(native_to_t1) == 0:
             raise FileNotFoundError(
