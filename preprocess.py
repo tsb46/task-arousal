@@ -15,6 +15,7 @@ def main(
     subject: str | None = None,
     task: str | None = None,
     func_type: Literal["volume", "surface"] = "volume",
+    me_type: list[Literal["optcomb", "t2", "s0"]] = ["optcomb"],
     echo_pipeline: bool = False,
     skip_physio: bool = False,
     skip_func: bool = False,
@@ -44,6 +45,7 @@ def main(
                     save_physio_figs=True,
                     skip_physio=skip_physio,
                     skip_func=skip_func,
+                    me_type=me_type,
                     echo_pipeline=echo_pipeline,
                     func_type=func_type,
                 )
@@ -95,6 +97,14 @@ if __name__ == "__main__":
         "the default is volume.",
     )
     parser.add_argument(
+        "--me_type",
+        nargs="+",
+        choices=["optcomb", "t2", "s0"],
+        default=["optcomb"],
+        help="One or more multi-echo data types to preprocess. Allowed values are "
+        "'optcomb', 't2', and 's0'. Defaults to 'optcomb'.",
+    )
+    parser.add_argument(
         "-echo_pipeline",
         "--echo_pipeline",
         action="store_true",
@@ -129,6 +139,7 @@ if __name__ == "__main__":
         args.subject,
         args.task,
         args.func_type,
+        args.me_type,
         args.echo_pipeline,
         args.skip_physio,
         args.skip_func,
