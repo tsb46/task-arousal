@@ -678,7 +678,9 @@ class PreprocessingPipeline:
         # standard reference image
         std_ref = self.file_mapper.layout.get(  # type: ignore
             subject=self.subject,
+            task=file_ents.get("task"),
             session=file_ents.get("session"),
+            space="MNI152NLin2009cAsym",
             run=file_ents.get("run"),
             suffix="boldref",
         )
