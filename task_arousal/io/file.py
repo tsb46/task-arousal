@@ -177,8 +177,6 @@ class FileMapperBids:
         list of str
             A list of fMRI file paths.
         """
-        # TODO: for multi-echo datasets, add option to get T2* and S0 maps in addition to optimally combined functional data
-
         # set description and extension based on preprocessing type
         if func_type == "volume":
             extension = ".nii.gz"
@@ -215,11 +213,12 @@ class FileMapperBids:
                         run=run,
                         desc=desc,
                         extension=extension,
+                        me_type=me_type,
                     )
                     fmri_files.extend(files)
             else:
                 files = self.get_session_fmri_files(
-                    session, task, desc=desc, extension=extension
+                    session, task, desc=desc, extension=extension, me_type=me_type
                 )
                 fmri_files.extend(files)
         return fmri_files
@@ -542,10 +541,19 @@ class FileMapperBids:
         list of str
             A list of fMRI file paths.
         """
-        # TODO: for multi-echo datasets, add option to get T2* and S0 maps in addition to optimally combined functional data
-        if me_type:
-            raise NotImplementedError(
-                "Multi-echo file retrieval not yet implemented in get_session_fmri_files method. Use get_session_echo_files method for multi-echo datasets to retrieve separate echo files for T2* and S0 estimation."
+        if me_type == "optcomb":
+            _desc = desc  # for optimally combined multi-echo data, the desc is the same as specified in the argument
+        elif me_type in ["t2", "s0"]:
+            # for T2* and S0 maps estimated from multi-echo data, the desc is modified to include the map type (e.g. 'preproc_t2' or 'preprocfinal_s0')
+            if desc is not None:
+                _desc = f"{desc}{me_type}"
+            else:
+                _desc = (
+                    me_type  # if no desc specified, just use the map type as the desc
+                )
+        else:
+            raise ValueError(
+                "me_type must be 'optcomb', 't2', or 's0'. Note, the option to retrieve T2* and S0 maps is only applicable for multi-echo datasets - optcomb is the default for single-echo datasets."
             )
 
         bids_files = self.layout.get(
@@ -555,7 +563,7 @@ class FileMapperBids:
             suffix="bold",
             extension=extension,
             run=run,
-            desc=desc,
+            desc=_desc,
         )
 
         filenames = [f.path for f in bids_files]
@@ -645,6 +653,23 @@ class FileMapperBids:
                 f"Multiple brain mask files found for subject '{self.subject}' in dataset. Expected only one mask file per subject."
             )
         return bids_files[0].path  # assuming there is only one mask file per subject
+
+    def get_tr(self, task: str) -> float:
+        """
+        Get the repetition time (TR) for a specific task.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+
+        Returns
+        -------
+        float
+            The repetition time (TR) in seconds.
+        """
+        tr = self.layout.get_tr(subject=self.subject, task=task)
+        return tr
 
 
 class FileMapperNSD:
@@ -736,6 +761,7 @@ class FileMapperNSD:
         sessions: List[str] | None = None,
         preproc_type: Literal["orig", "final"] = "orig",
         func_type: Literal["volume", "surface"] = "volume",
+        me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
         echo: bool = False,
     ) -> list[str]:
         """
@@ -755,6 +781,11 @@ class FileMapperNSD:
             The type of functional data. Only volume files are available for NSD,
             so this parameter does not affect file retrieval but is included
             for API compatibility with FileMapperBids.
+        me_type: {'optcomb', 't2', 's0'}
+            The type of multi-echo functional file to retrieve. Only for multi-echo
+            datasets. This parameter is ignored for single-echo datasets. NSD is a single-echo dataset,
+            so this parameter does not affect file retrieval but is included for API compatibility
+            with FileMapperBids.
         echo: bool
             NSD is a single-echo dataset, so this parameter does not affect file retrieval
             but is included for API compatibility with FileMapperBids.

@@ -15,10 +15,16 @@ def main(
     subject: str | None = None,
     task: str | None = None,
     func_type: Literal["volume", "surface"] = "volume",
+    echo_pipeline: bool = False,
     skip_physio: bool = False,
     skip_func: bool = False,
 ):
     """Perform full preprocessing pipeline on selected subject or all subjects."""
+    # only allow echo_pipeline for euskalibur dataset since NSD does not have multi-echo data
+    if echo_pipeline and dataset != "euskalibur":
+        raise ValueError(
+            "Echo pipeline can only be used for the Euskalibur dataset since NSD does not have multi-echo data."
+        )
     # loop through tasks and preprocess
     if subject is None:
         subjects = get_dataset_subjects(dataset)
@@ -29,7 +35,7 @@ def main(
     if dataset in ["euskalibur", "nsd"]:
         for subject in subjects:
             print(f"Starting preprocessing for subject: {subject}")
-            pipeline = PreprocessingPipeline(dataset, subject, func_type=func_type)
+            pipeline = PreprocessingPipeline(dataset, subject)
             tasks_to_process = [task] if task is not None else pipeline.tasks
             for task in tasks_to_process:
                 print(f"Preprocessing task: {task} for subject: {subject}")
@@ -38,6 +44,8 @@ def main(
                     save_physio_figs=True,
                     skip_physio=skip_physio,
                     skip_func=skip_func,
+                    echo_pipeline=echo_pipeline,
+                    func_type=func_type,
                 )
     else:
         raise ValueError(f"Unsupported dataset: {dataset}")
@@ -87,6 +95,16 @@ if __name__ == "__main__":
         "the default is volume.",
     )
     parser.add_argument(
+        "-echo_pipeline",
+        "--echo_pipeline",
+        action="store_true",
+        required=False,
+        default=False,
+        help="For the Euskalibut dataset. Whether to estimate T2* and S0 from multi-echo fMRI data using a log-linear fit "
+        "and use the estimated T2* and S0 values for preprocessing instead of the raw echo data. Defaults to False.",
+    )
+
+    parser.add_argument(
         "-skip_physio",
         "--skip_physio",
         action="store_true",
@@ -111,6 +129,7 @@ if __name__ == "__main__":
         args.subject,
         args.task,
         args.func_type,
+        args.echo_pipeline,
         args.skip_physio,
         args.skip_func,
     )
