@@ -697,10 +697,12 @@ class PreprocessingPipeline:
         # native to T1 image transform (should be the same for all echoes since they are all in the same native space)
         native_to_t1 = self.file_mapper.layout.get(  # type: ignore
             subject=self.subject,
+            task=file_ents.get("task"),
             to="T1w",
             mode="image",
             session=file_ents.get("session"),
             run=file_ents.get("run"),
+            desc="coreg",
         )
         if native_to_t1 is None or len(native_to_t1) == 0:
             raise FileNotFoundError(
