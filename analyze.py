@@ -71,6 +71,7 @@ def main(
     analysis: str | None,
     task: str | None,
     space: Literal["surface", "volume"] = "volume",
+    me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
 ) -> None:
     """
     Perform full analysis pipeline on selected subject
@@ -87,9 +88,25 @@ def main(
         Task to perform analysis on
     space : Literal["surface", "volume"]
         Space to write output in (surface or volume)
+    me_type : Literal["optcomb", "t2", "s0"]
+        Type of multi-echo data to load (optcomb, t2, or s0). Only relevant for volume data in the EuskalIBUR dataset.
+        Ignored for surface data and NSD dataset.
     """
+    # check inputs
     if space == "surface" and dataset != "euskalibur":
         raise ValueError("Surface space is only available for the EuskalIBUR dataset.")
+    # me_type is only relevant for volume data in the EuskalIBUR dataset, if surface, ignore me_type
+    if space == "surface" and me_type != "optcomb":
+        print(
+            "optimally combined data is only available for surface, ignoring me_type and loading surface data."
+        )
+        me_type = "optcomb"
+    # me_type data is not available for NSD dataset, if dataset is NSD, ignore me_type
+    if dataset == "nsd" and me_type != "optcomb":
+        print(
+            "Multi-echo data is not available for NSD dataset, ignoring me_type and loading data."
+        )
+        me_type = "optcomb"
     # initialize dataset loader
     if dataset == "euskalibur":
         if subject is None:
@@ -152,12 +169,12 @@ def main(
                 f"Loading concatenated data for dataset {dataset}, subject {_subject}, task {task}"
             )
             data: DatasetLoad = ds.load_data(
-                task=task, func_type=space, concatenate=True
+                task=task, func_type=space, concatenate=True, me_type=me_type
             )  # type: ignore
 
             # perform PCA analysis
             if "pca" in _analysis:
-                _pca(dataset, data, ds, _subject, task, space)
+                _pca(dataset, data, ds, _subject, task, space, me_type)
                 print(
                     f"PCA analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
@@ -169,7 +186,15 @@ def main(
                 )
             elif "dlm_physio" in _analysis and physio_labels is not None:
                 _dlm_physio(
-                    dataset, data, ds, tr[task], physio_labels, _subject, task, space
+                    dataset,
+                    data,
+                    ds,
+                    tr[task],
+                    physio_labels,
+                    _subject,
+                    task,
+                    space,
+                    me_type,
                 )
                 print(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
@@ -182,12 +207,12 @@ def main(
                 f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event analyses"
             )
             data: DatasetLoad = ds.load_data(
-                task=task, func_type=space, concatenate=False
+                task=task, func_type=space, concatenate=False, me_type=me_type
             )  # type: ignore
 
             if "dlm_event" in _analysis:
                 # perform DLM analysis with event regressors
-                _dlm_event(dataset, data, ds, tr[task], _subject, task, space)
+                _dlm_event(dataset, data, ds, tr[task], _subject, task, space, me_type)
                 print(
                     f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
@@ -201,6 +226,7 @@ def _dlm_event(
     subject: str,
     task: str,
     space: Literal["volume", "surface"],
+    me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
 ) -> None:
     """
     Perform Distributed Lag Model (DLM) analysis with event regressors
@@ -222,6 +248,8 @@ def _dlm_event(
         Task identifier
     space : Literal["volume", "surface"]
         Space to write output in (surface or volume)
+    me_type : Literal["optcomb", "t2", "s0"]
+        Type of multi-echo data to load (optcomb, t2, or s0). Special suffix used if t2 or s0 data, otherwise ignored.
     """
     print(
         f"Performing DLM with event regressors on dataset {dataset}, subject {subject}, task {task}"
@@ -243,6 +271,11 @@ def _dlm_event(
     else:
         raise ValueError(f"Dataset {dataset} not recognized")
 
+    if me_type in ["t2", "s0"]:
+        suffix = "_" + me_type
+    else:
+        suffix = ""
+
     # estimate DLM with event regressors with default parameters
     dlm = DistributedLagEventModel(tr=tr)
     dlm = dlm.fit(
@@ -255,13 +288,13 @@ def _dlm_event(
         pred_func_img = ds.to_img(dlm_eval.pred_outcome, func_type=space)
         nib.save(  # type: ignore
             pred_func_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}{suffix}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
         )
         # write dlm metadata (including betas, t-stats, etc.) to pickle file
         pickle.dump(
             dlm_eval,
             open(
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_metadata.pkl",
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_metadata{suffix}.pkl",
                 "wb",
             ),
         )
@@ -276,6 +309,7 @@ def _dlm_physio(
     subject: str,
     task: str,
     space: Literal["volume", "surface"],
+    me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
 ) -> None:
     """
     Perform Distributed Lag Model (DLM) analysis with physiological regressors
@@ -299,10 +333,17 @@ def _dlm_physio(
         Task identifier
     space : Literal["volume", "surface"]
         Space to write output in (surface or volume)
+    me_type : Literal["optcomb", "t2", "s0"]
+        Type of multi-echo data to load (optcomb, t2, or s0).
+        Special suffix used if t2 or s0 data, otherwise ignored.
     """
     print(
         f"Performing DLM with physiological regressors on subject {subject}, task {task}"
     )
+    if me_type in ["t2", "s0"]:
+        suffix = "_" + me_type
+    else:
+        suffix = ""
     # loop through physio signals
     for physio_label in physio_labels:
         # estimate DLM with physiological regressors
@@ -320,14 +361,14 @@ def _dlm_physio(
         pred_func_img = ds.to_img(dlm_eval.pred_outcome, func_type=space)
         nib.save(  # type: ignore
             pred_func_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}{suffix}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
         )
 
         # write dlm metadata to pickle file
         pickle.dump(
             dlm_eval,
             open(
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_metadata.pkl",
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_metadata{suffix}.pkl",
                 "wb",
             ),
         )
@@ -340,6 +381,7 @@ def _pca(
     subject: str | None,
     task: str,
     space: Literal["volume", "surface"],
+    me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
 ) -> None:
     """
     Perform PCA decomposition on fMRI data and save results to files
@@ -358,6 +400,9 @@ def _pca(
         Task identifier
     space : Literal["volume", "surface"]
         Space to write output in (surface or volume)
+    me_type : Literal["optcomb", "t2", "s0"]
+        Type of multi-echo data to load (optcomb, t2, or s0). Special suffix
+        used if t2 or s0 data, otherwise ignored.
     """
     print(f"Performing PCA on dataset {dataset}, subject {subject}, task {task}")
     # estimate PCA with 10 components
@@ -366,14 +411,21 @@ def _pca(
     pca_results = pca.decompose(data["fmri"][0])
     # write loadings to nifti file
     pca_loadings = ds.to_img(pca_results.loadings.T, func_type=space)
+    if me_type in ["t2", "s0"]:
+        suffix = "_" + me_type
+    else:
+        suffix = ""
     nib.save(  # type: ignore
         pca_loadings,
-        f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_pca_loadings{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
+        f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_pca_loadings{suffix}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
     )
     # write pca metadata (including pc scores, exp var, etc.) to pickle file
     pickle.dump(
         pca_results,
-        open(f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_pca_metadata.pkl", "wb"),
+        open(
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_pca_metadata{suffix}.pkl",
+            "wb",
+        ),
     )
 
 
@@ -429,6 +481,16 @@ if __name__ == "__main__":
         default="volume",
         help="Space to write output in (surface or volume). Surface space is only available for the EuskalIBUR dataset.",
     )
+    # add optional argument so specify the multi-echo data type to load (optcomb, t2, or s0), only relevant for volume data in the EuskalIBUR dataset
+    parser.add_argument(
+        "-m",
+        "--me_type",
+        type=str,
+        choices=["optcomb", "t2", "s0"],
+        required=False,
+        default="optcomb",
+        help="Type of multi-echo data to load (optcomb, t2, or s0). Only relevant for volume data in the EuskalIBUR dataset. Ignored for surface data and NSD dataset.",
+    )
     # parse arguments
     args = parser.parse_args()
-    main(args.dataset, args.subject, args.analysis, args.task, args.space)
+    main(args.dataset, args.subject, args.analysis, args.task, args.space, args.me_type)

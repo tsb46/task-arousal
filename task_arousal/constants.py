@@ -33,6 +33,9 @@ TR_PAN = 1.355
 # expected columns in event dataframe
 EVENT_COLUMNS = ["onset", "duration", "trial_type"]
 
+# Echo times for Euskalibur, in milliseconds
+ECHOS_EUSKALIBUR = [10.6, 28.69, 46.78, 64.87, 82.96]
+
 
 ## Preprocessing parameters
 # Slice timing reference, between 0 and 1 (middle slice)

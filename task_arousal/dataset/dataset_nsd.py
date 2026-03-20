@@ -49,6 +49,7 @@ class DatasetNsd:
         self,
         task: str,
         func_type: Literal["volume", "surface"] = "volume",
+        me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
@@ -64,6 +65,9 @@ class DatasetNsd:
         ----------
         func_type : Literal["volume", "surface"], optional
             The type of functional data, either "volume" or "surface". "Surface" is not currently supported for NSD dataset. Default is "volume".
+        me_type : Literal["optcomb", "t2", "s0"], optional
+            The type of multi-echo data to load. Multi-echo data is not available for NSD dataset,
+            so this parameter is ignored. Default is "optcomb".
         task : str
             The task identifier.
         sessions : str or List[str], optional
