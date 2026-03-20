@@ -19,11 +19,15 @@ def func_surface_pipeline(
     func_fp: str,
     tr: float,
     dummy_vols: int,
-    highpass: float,
+    highpass: float | None,
     fwhm: float,
     surface_template_lh: str,
     surface_template_rh: str,
     remove_dummy: bool = True,
+    detrend: bool = True,
+    highpass_filter: bool = True,
+    standardize: bool = True,
+    spatial_smooth: bool = True,
 ):
     """
     Surface volume pipeline for processing functional MRI data.
@@ -43,8 +47,9 @@ def func_surface_pipeline(
         The repetition time (TR) of the fMRI data.
     dummy_vols : int
         The number of dummy volumes to drop. Ignored if remove_dummy is False.
-    highpass : float
-        The high-pass filter cutoff frequency in Hz.
+    highpass : float | None
+        The high-pass filter cutoff frequency in Hz. If highpass_filter is False,
+        this parameter is ignored and no high-pass filtering is applied.
     fwhm : float
         The full width at half maximum (FWHM) for spatial smoothing.
     surface_template_lh : str
@@ -53,6 +58,14 @@ def func_surface_pipeline(
         The file path to the right hemisphere surface template.
     remove_dummy : bool, optional
         Whether to remove dummy volumes, by default True.
+    detrend : bool, optional
+        Whether to apply detrending, by default True.
+    highpass_filter : bool, optional
+        Whether to apply high-pass filtering, by default True.
+    standardize : bool, optional
+        Whether to apply standardization, by default True.
+    spatial_smooth : bool, optional
+        Whether to apply spatial smoothing, by default True.
     """
     if tr <= 0:
         raise ValueError(f"tr must be > 0, got {tr}")
@@ -108,12 +121,14 @@ def func_surface_pipeline(
         series_axis = SeriesAxis(
             start=new_start, step=float(series_axis.step), size=new_size
         )
-
+    # if highpass_filter is False, set highpass to None to skip high-pass filtering in clean
+    if not highpass_filter:
+        highpass = None
     # Detrend, high-pass filter, and standardize (z-score) along time
     time_by_feat = clean(
         time_by_feat,
-        detrend=True,
-        standardize="zscore",
+        detrend=detrend,
+        standardize=standardize,
         high_pass=highpass,
         t_r=tr,
     )

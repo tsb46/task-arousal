@@ -18,9 +18,13 @@ def func_volume_pipeline(
     brain_mask_fp: str,
     fwhm: float,
     dummy_vols: int,
-    highpass: float,
+    highpass: float | None,
     resample: bool = False,
     remove_dummy: bool = True,
+    spatial_smooth: bool = True,
+    detrend: bool = True,
+    highpass_filter: bool = True,
+    standardize: bool = True,
 ) -> nib.nifti1.Nifti1Image:
     """
     Functional volume pipeline for processing functional MRI data.
@@ -45,12 +49,21 @@ def func_volume_pipeline(
         The full width at half maximum (FWHM) for spatial smoothing.
     dummy_vols : int
         The number of dummy volumes to drop. Ignored if remove_dummy is False.
-    highpass : float
-        The high-pass filter cutoff frequency in Hz.
+    highpass : float | None
+        The high-pass filter cutoff frequency in Hz. If highpass_filter is False,
+        this parameter is ignored and no high-pass filtering is applied.
     resample : bool, optional
         Whether to resample the fMRI data to the brain mask resolution, by default False.
     remove_dummy : bool, optional
         Whether to remove dummy volumes, by default True.
+    spatial_smooth : bool, optional
+        Whether to apply spatial smoothing, by default True.
+    detrend : bool, optional
+        Whether to apply detrending, by default True.
+    highpass_filter : bool, optional
+        Whether to apply high-pass filtering, by default True.
+    standardize : bool, optional
+        Whether to apply standardization, by default True.
 
     Returns
     -------
@@ -123,11 +136,14 @@ def func_volume_pipeline(
     else:
         func_img_proc = func_img
 
+    # if highpass_filter is False, set highpass to None to skip high-pass filtering in clean_img
+    if not highpass_filter:
+        highpass = None
     # using the clean_img function to detrend, high-pass filter, and standardize the signal
     func_img_proc = clean_img(
         func_img_proc,
-        detrend=True,
-        standardize=True,
+        detrend=detrend,
+        standardize=standardize,
         high_pass=highpass,
         mask_img=mask_img,
         t_r=tr,
