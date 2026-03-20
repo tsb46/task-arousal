@@ -4,7 +4,7 @@ Perform full preprocessing pipeline on selected subject
 
 import argparse
 
-from typing import Literal
+from typing import Literal, List
 
 from task_arousal.io.file import get_dataset_subjects
 from task_arousal.preprocess.pipeline import PreprocessingPipeline
@@ -15,7 +15,7 @@ def main(
     subject: str | None = None,
     task: str | None = None,
     func_type: Literal["volume", "surface"] = "volume",
-    me_type: list[Literal["optcomb", "t2", "s0"]] = ["optcomb"],
+    me_type: List[Literal["optcomb", "t2", "s0"]] = ["optcomb"],
     echo_pipeline: bool = False,
     skip_physio: bool = False,
     skip_func: bool = False,
