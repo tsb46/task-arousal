@@ -86,6 +86,7 @@ class DatasetEuskalibur:
         self,
         task: str,
         func_type: Literal["volume", "surface"] = "volume",
+        me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
@@ -102,6 +103,9 @@ class DatasetEuskalibur:
             The task identifier.
         func_type : {'volume', 'surface'}, optional
             The type of functional data to load. Default is 'volume'.
+        me_type : {'optcomb', 't2', 's0'}, optional
+            The type of multi-echo data to load. Default is 'optcomb'.
+            Only relevant if func_type is 'volume'.
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
@@ -123,6 +127,13 @@ class DatasetEuskalibur:
             raise ValueError(
                 f"Task '{task}' is not available for subject '{self.subject}'."
             )
+        # me_type is only relevant for volume data, if surface, ignore me_type
+        if func_type == "surface" and me_type != "optcomb":
+            if verbose:
+                print(
+                    "optimally combined data is only available for surface, ignoring me_type and loading surface data."
+                )
+            me_type = "optcomb"
         # select conditions and runs based on task
         if task == "pinel":
             conditions = PINEL_CONDITIONS
@@ -221,6 +232,7 @@ class DatasetEuskalibur:
                         extension=".nii.gz"
                         if func_type == "volume"
                         else ".dtseries.nii",
+                        me_type=me_type,
                     )
                     # if no fMRI file is found, raise error
                     if len(fmri_files) == 0:
