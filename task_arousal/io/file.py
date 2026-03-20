@@ -38,8 +38,12 @@ class FileMapperBids:
         """
         self.dataset = dataset
         self.subject = subject
+        self._initialize_layout()
+
+    def _initialize_layout(self) -> None:
+        """Initialize or refresh the BIDS layout and cached subject metadata."""
         # initialize BIDS layout
-        print("Initializing BIDS layout for subject:", subject)
+        print("Initializing BIDS layout for subject:", self.subject)
         """
         Note, for EUSKALIBUR dataset: the filemapper class assumes that fmri, physio and event files 
         are in a single BIDS directory structure. Physio files are in the 'raw'
@@ -81,20 +85,24 @@ class FileMapperBids:
             )
 
         # check if subject is valid
-        if subject not in self.available_subjects:
-            raise ValueError(f"Subject '{subject}' not found in dataset.")
+        if self.subject not in self.available_subjects:
+            raise ValueError(f"Subject '{self.subject}' not found in dataset.")
         # get the sessions for the subject
-        self.sessions = self.layout.get_sessions(subject=subject)
+        self.sessions = self.layout.get_sessions(subject=self.subject)
         # get the tasks for the subject
-        self.tasks = self.layout.get_tasks(subject=subject)
+        self.tasks = self.layout.get_tasks(subject=self.subject)
         # loop through sessions and get runs for each task
         self.tasks_runs = {}
         for task in self.tasks:
             self.tasks_runs[task] = {}
             for session in self.sessions:
                 self.tasks_runs[task][session] = self.layout.get_runs(
-                    subject=subject, session=session, task=task
+                    subject=self.subject, session=session, task=task
                 )
+
+    def refresh_layout(self) -> None:
+        """Rebuild the BIDS layout so newly created files can be discovered."""
+        self._initialize_layout()
 
     def get_echo_files(
         self,

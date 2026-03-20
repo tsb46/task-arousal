@@ -178,7 +178,7 @@ class PreprocessingPipeline:
         # TODO: implement t2 and s0 map preprocessing for surface files in the future, which would involve
         # mapping the t2 and s0 estimates to the surface and then applying the surface-based preprocessing
         # steps using the mapped t2 and s0 values instead of the raw functional data.
-        if (me_type == "t2" or me_type == "s0") and func_type == "surface":
+        if ("t2" in me_type or "s0" in me_type) and func_type == "surface":
             raise ValueError(
                 "T2 and S0 map preprocessing cannot be applied to surface files since it is only implemented for volume files."
             )
@@ -245,12 +245,14 @@ class PreprocessingPipeline:
                             "Applying multi-echo preprocessing pipeline to estimate T2* and S0 maps"
                         )
                     # estimate t2* and s0 maps from multi-echo data
-                    fmri_files = self._multiecho_pipeline(
+                    self._multiecho_pipeline(
                         task=task_proc,
                         sessions=sessions,
                         echo_times=ECHOS_EUSKALIBUR,
                         verbose=verbose,
                     )
+                    assert isinstance(self.file_mapper, FileMapperBids)
+                    self.file_mapper.refresh_layout()
                 # loop through multi-echo types (for multi-echo datasets) or just once for single-echo datasets
                 for me in me_type:
                     # print which multi-echo type is being processed
@@ -443,17 +445,17 @@ class PreprocessingPipeline:
         ) -> str:
             """Create a BIDS-ish output filename with `desc-preprocfinal`."""
             base = _strip_known_fmri_extensions(name)
-            if me_type == "t2" or me_type == "s0":
+            if me_type in ["t2", "s0"]:
                 me_ext = me_type
+                source_desc = f"desc-preproc{me_type}"
             else:
                 me_ext = ""
+                source_desc = "desc-preproc"
 
             if "desc-preprocfinal" in base:
                 new_base = base
             elif "desc-preproc" in base:
-                new_base = base.replace(
-                    f"desc-preproc{me_type}", f"desc-preprocfinal{me_ext}", 1
-                )
+                new_base = base.replace(source_desc, f"desc-preprocfinal{me_ext}", 1)
             elif "_bold" in base:
                 new_base = base.replace("_bold", f"_desc-preprocfinal{me_ext}_bold", 1)
             else:
@@ -557,7 +559,7 @@ class PreprocessingPipeline:
         ----------
         task : str
             The task identifier for which to apply the multi-echo pipeline.
-        echo_times : List[int]
+        echo_times : List[float]
             The echo times (in milliseconds) corresponding to the multi-echo fMRI data.
         sessions : List[str] | None, optional
             The session identifiers to include. If None, all sessions will be included. Defaults to None
