@@ -10,7 +10,6 @@ load_dotenv()
 
 # path to data directory
 DATA_DIRECTORY_EUSKALIBUR = os.getenv("DATA_DIRECTORY_EUSKALIBUR", "data/euskalibur")
-DATA_DIRECTORY_PAN = os.getenv("DATA_DIRECTORY_PAN", "data/pan")
 DATA_DIRECTORY_NSD = os.getenv("DATA_DIRECTORY_NSD", "data/nsd")
 # flag indicating if the data should be searched in the 'derivatives' directory
 IS_DERIVED = os.getenv("IS_DERIVED", "false").lower() == "true"
@@ -18,15 +17,12 @@ IS_DERIVED = os.getenv("IS_DERIVED", "false").lower() == "true"
 # Brain masks
 MASK_EUSKALIBUR = "templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz"
 MASK_GM_EUSKALIBUR = "templates/MNI152_T1_3mm_gm_mask_euskalibur.nii.gz"
-MASK_PAN = "templates/MNI152_T1_3mm_brain_mask_dil_pan.nii.gz"
-MASK_GM_PAN = "templates/MNI152_T1_3mm_gm_mask_pan.nii.gz"
 # Surface templates
 SURFACE_LH = "templates/fsLR_den-32k_hemi-L_inflated.surf.gii"
 SURFACE_RH = "templates/fsLR_den-32k_hemi-R_inflated.surf.gii"
 
 # TR (Repetition Time) in seconds
 TR_EUSKALIBUR = 1.5
-TR_PAN = 1.355
 # note, that the TR for NSD is different for each task, TR is handled in the file mapper class rather than as a constant
 # rest TR: 1.333s, nsdimagery TR: 1.0s
 
@@ -46,7 +42,6 @@ DUMMY_VOLUMES = 10
 HIGHPASS = 0.01
 # Full width at half maximum for Gaussian smoothing
 FWHM_EUSKALIBUR = 0  # in mm - no smoothing for esukalibur
-FWHM_PAN = 4  # in mm
 FWHM_NSD = 0  # in mm - no smoothing for NSD
 # physio fields to extract from raw data
 PHYSIO_COLUMNS_EUSKALIBUR = [
