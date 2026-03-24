@@ -4,11 +4,15 @@ Volume functional MRI preprocessing component.
 
 from __future__ import annotations
 
+import subprocess
+import tempfile
+
 from pathlib import Path
 
 import nibabel as nib
+import numpy as np
 
-from nilearn.image import clean_img, smooth_img, resample_img
+from nilearn.image import clean_img, smooth_img
 from nilearn.masking import apply_mask, unmask
 
 
@@ -19,17 +23,22 @@ def func_volume_pipeline(
     fwhm: float,
     dummy_vols: int,
     highpass: float | None,
-    resample: bool = False,
     remove_dummy: bool = True,
     spatial_smooth: bool = True,
     detrend: bool = True,
     highpass_filter: bool = True,
     standardize: bool = True,
+    to_std: bool = False,
+    native_to_t1w_fp: str | None = None,
+    t1w_to_std_fp: str | None = None,
+    std_space_ref_fp: str | None = None,
 ) -> nib.nifti1.Nifti1Image:
     """
     Functional volume pipeline for processing functional MRI data.
 
     Preprocessing steps:
+
+    (Perform transforms to standard space if to_std is True, using func_to_std)
 
     1) Drop dummy volumes
     2) Detrending (clean_img)
@@ -81,7 +90,7 @@ def func_volume_pipeline(
 
     if tr <= 0:
         raise ValueError(f"tr must be > 0, got {tr}")
-    if highpass < 0:
+    if highpass is not None and highpass < 0:
         raise ValueError(f"highpass must be >= 0, got {highpass}")
     if dummy_vols < 0:
         raise ValueError(f"dummy_vols must be >= 0, got {dummy_vols}")
@@ -104,27 +113,30 @@ def func_volume_pipeline(
     if func_img.ndim != 4:
         raise ValueError(f"func_fp must be 4D (x,y,z,t), got shape {func_img.shape}")
 
-    # If not resampling, make sure grids match in XYZ.
-    if not resample and func_img.shape[:3] != mask_img.shape[:3]:
+    # if to_std is True, apply the standard space transformations to the functional image before any other preprocessing steps
+    # using the provided ANTs transformation files from fMRIPrep (native_to_t1w_fp and t1w_to_std_fp) and the standard space reference image (std_space_ref_fp)
+    if to_std:
+        if (
+            native_to_t1w_fp is None
+            or t1w_to_std_fp is None
+            or std_space_ref_fp is None
+        ):
+            raise ValueError(
+                "native_to_t1w_fp, t1w_to_std_fp, and std_space_ref_fp must all be provided if to_std is True"
+            )
+        func_img = func_to_std(
+            img=func_img,
+            std_space_ref_fp=std_space_ref_fp,
+            native_to_t1w_fp=native_to_t1w_fp,
+            t1w_to_std_fp=t1w_to_std_fp,
+        )
+    # Make sure func and mask grids match in XYZ.
+    if func_img.shape[:3] != mask_img.shape[:3]:
         raise ValueError(
             "Functional image and mask have different spatial shapes. "
             f"func shape[:3]={func_img.shape[:3]} vs mask shape[:3]={mask_img.shape[:3]}. "
-            "Set resample=True or provide a mask in the same space/resolution as func_fp."
+            "Provide a mask in the same space/resolution as func_fp."
         )
-
-    # downsample data to mask resolution, assumes func is in same space as mask
-    if resample:
-        func_img = resample_img(
-            func_img,
-            target_affine=mask_img.affine,
-            target_shape=mask_img.shape[:3],
-            interpolation="continuous",
-            copy_header=True,
-            force_resample=True,
-        )
-
-        if not isinstance(func_img, nib.nifti1.Nifti1Image):
-            raise TypeError("resample_img did not return a Nifti1Image")
 
     if remove_dummy:
         n_tp = int(func_img.shape[3])
@@ -213,3 +225,96 @@ def _func_smooth(func_img: nib.Nifti1Image, fwhm: float) -> nib.Nifti1Image:  # 
     # Apply smoothing (e.g., using a Gaussian filter)
     smoothed_img = smooth_img(func_img, fwhm=fwhm)
     return smoothed_img  # type: ignore
+
+
+def func_to_std(
+    img: str | nib.nifti1.Nifti1Image,
+    std_space_ref_fp: str,
+    native_to_t1w_fp: str,
+    t1w_to_std_fp: str,
+    output_fp: str | None = None,
+) -> nib.nifti1.Nifti1Image:
+    """
+    Apply the standard fMRIPrep spatial transformations to the given image, to bring it into MNI space.
+
+    Inspired from:
+    https://tedana.readthedocs.io/en/stable/faq.html#warping-scanner-space-fmriprep-outputs-to-standard-space
+
+    Parameters
+    ----------
+    img : str or nib.Nifti1Image
+        Image to transform. If a NIfTI image is provided, it will be written to a
+        temporary directory before calling ANTs.
+    std_space_ref_fp : str
+        File path to the standard space reference image (e.g. MNI152NLin2009cAsym).
+    native_to_t1w_fp : str
+        File path to the fMRIPrep-generated transformation file from native space to T1w space (e.g. from-boldref_to-T1w_mode-image_xfm.txt).
+    t1w_to_std_fp : str
+        File path to the fMRIPrep-generated transformation file from T1w space to standard space (e.g. from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5).
+    output_fp : str or None
+        File path where the transformed image should be saved. If None, a
+        temporary output path is used and the transformed image is returned in memory.
+
+    Returns
+    -------
+    nib.Nifti1Image
+        The transformed image.
+
+    """
+
+    def _load_materialized_nifti(img_fp: str) -> nib.nifti1.Nifti1Image:
+        loaded_img = nib.nifti1.load(img_fp)
+        if not isinstance(loaded_img, nib.nifti1.Nifti1Image):
+            raise TypeError(f"Expected NIfTI image at {img_fp}, got {type(loaded_img)}")
+        return nib.nifti1.Nifti1Image(
+            np.asanyarray(loaded_img.dataobj),
+            affine=loaded_img.affine,
+            header=loaded_img.header.copy(),
+            extra=loaded_img.extra.copy(),
+        )
+
+    with tempfile.TemporaryDirectory(prefix="task_arousal_multiecho_") as tmpdir:
+        if isinstance(img, nib.nifti1.Nifti1Image):
+            img_fp = f"{tmpdir}/multiecho_native.nii.gz"
+            nib.nifti1.save(img, img_fp)
+        else:
+            img_fp = img
+
+        resolved_output_fp = output_fp or f"{tmpdir}/multiecho_std.nii.gz"
+
+        try:
+            subprocess.run(
+                [
+                    "antsApplyTransforms",
+                    "-e",
+                    "3",
+                    "-i",
+                    img_fp,
+                    "-r",
+                    std_space_ref_fp,
+                    "-o",
+                    resolved_output_fp,
+                    "-n",
+                    "LanczosWindowedSinc",
+                    "-t",
+                    t1w_to_std_fp,
+                    "-t",
+                    native_to_t1w_fp,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                "antsApplyTransforms failed while transforming multi-echo image: "
+                f"{exc.stderr.strip() or exc.stdout.strip() or exc}"
+            ) from exc
+
+        if output_fp is None:
+            return _load_materialized_nifti(resolved_output_fp)
+
+    saved_img = nib.nifti1.load(output_fp)
+    if not isinstance(saved_img, nib.nifti1.Nifti1Image):
+        raise TypeError(f"Expected NIfTI image at {output_fp}, got {type(saved_img)}")
+    return saved_img

@@ -4,7 +4,7 @@ Perform full preprocessing pipeline on selected subject
 
 import argparse
 
-from typing import Literal, List
+from typing import Literal
 
 from task_arousal.io.file import get_dataset_subjects
 from task_arousal.preprocess.pipeline import PreprocessingPipeline
@@ -15,17 +15,12 @@ def main(
     subject: str | None = None,
     task: str | None = None,
     func_type: Literal["volume", "surface"] = "volume",
-    me_type: List[Literal["optcomb", "t2", "s0"]] = ["optcomb"],
-    echo_pipeline: bool = False,
+    me_type: Literal["optcomb", "t2s0", "echo"] = "optcomb",
+    skip_me_fit: bool = True,
     skip_physio: bool = False,
     skip_func: bool = False,
 ):
     """Perform full preprocessing pipeline on selected subject or all subjects."""
-    # only allow echo_pipeline for euskalibur dataset since NSD does not have multi-echo data
-    if echo_pipeline and dataset != "euskalibur":
-        raise ValueError(
-            "Echo pipeline can only be used for the Euskalibur dataset since NSD does not have multi-echo data."
-        )
     # loop through tasks and preprocess
     if subject is None:
         subjects = get_dataset_subjects(dataset)
@@ -46,7 +41,7 @@ def main(
                     skip_physio=skip_physio,
                     skip_func=skip_func,
                     me_type=me_type,
-                    echo_pipeline=echo_pipeline,
+                    skip_me_fit=skip_me_fit,
                     func_type=func_type,
                 )
     else:
@@ -98,20 +93,25 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--me_type",
-        nargs="+",
-        choices=["optcomb", "t2", "s0"],
-        default=["optcomb"],
-        help="One or more multi-echo data types to preprocess. Allowed values are "
-        "'optcomb', 't2', and 's0'. Defaults to 'optcomb'.",
+        choices=["optcomb", "t2s0", "echo"],
+        type=str,
+        required=False,
+        default="optcomb",
+        help="A multi-echo data type to preprocess. Allowed values are "
+        "'optcomb', 't2s0', and 'echo'. 't2s0' preprocesses time-varying T2* and S0 estimates from a linear log fit. "
+        "'Echo' preprocessing each individual echo separately. "
+        "Defaults to 'optcomb'. Note, this argument is only relevant if the dataset has multi-echo "
+        "data (e.g. Euskalibur).",
     )
     parser.add_argument(
-        "-echo_pipeline",
-        "--echo_pipeline",
+        "-skip_me_fit",
+        "--skip_me_fit",
         action="store_true",
         required=False,
-        default=False,
-        help="For the Euskalibut dataset. Whether to estimate T2* and S0 from multi-echo fMRI data using a log-linear fit "
-        "and use the estimated T2* and S0 values for preprocessing instead of the raw echo data. Defaults to False.",
+        default=True,
+        help="For the Euskalibut dataset. Whether to skip estimating T2* and S0 from multi-echo fMRI data using a log-linear fit. Use"
+        "this option if you already estimated T2* and S0 and just want to re-run the preprocessing pipeline on the T2* and S0 estimates. If not provided, "
+        "the default is True.",
     )
 
     parser.add_argument(
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         args.task,
         args.func_type,
         args.me_type,
-        args.echo_pipeline,
+        args.skip_me_fit,
         args.skip_physio,
         args.skip_func,
     )

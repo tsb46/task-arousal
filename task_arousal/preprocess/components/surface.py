@@ -69,7 +69,7 @@ def func_surface_pipeline(
     """
     if tr <= 0:
         raise ValueError(f"tr must be > 0, got {tr}")
-    if highpass < 0:
+    if highpass is not None and highpass < 0:
         raise ValueError(f"highpass must be >= 0, got {highpass}")
     if dummy_vols < 0:
         raise ValueError(f"dummy_vols must be >= 0, got {dummy_vols}")
@@ -128,7 +128,7 @@ def func_surface_pipeline(
     time_by_feat = clean(
         time_by_feat,
         detrend=detrend,
-        standardize=standardize,
+        standardize=standardize,  # type: ignore
         high_pass=highpass,
         t_r=tr,
     )

@@ -51,10 +51,7 @@ from task_arousal.constants import (
 )
 
 from task_arousal.io.file import FileMapperBids, FileMapperNSD
-from task_arousal.preprocess.components.multiecho_fit import (
-    fit_multiecho,
-    multiecho_to_std,
-)
+from task_arousal.preprocess.components.multiecho_fit import fit_multiecho
 from task_arousal.preprocess.components.physio import physio_pipeline
 from task_arousal.preprocess.components.volume import func_volume_pipeline
 from task_arousal.preprocess.components.surface import func_surface_pipeline
@@ -101,9 +98,9 @@ class PreprocessingPipeline:
         sessions: list[str] | None = None,
         skip_func: bool = False,
         skip_physio: bool = False,
-        me_type: List[Literal["optcomb", "t2", "s0"]] = ["optcomb"],
+        me_type: Literal["optcomb", "t2s0", "echo"] = "optcomb",
         save_physio_figs: bool = False,
-        echo_pipeline: bool = False,
+        skip_me_fit: bool = True,
         verbose: bool = True,
     ) -> None:
         """
@@ -124,15 +121,18 @@ class PreprocessingPipeline:
             Whether to skip fMRI preprocessing. Defaults to False.
         skip_physio : bool, optional
             Whether to skip physiological preprocessing. Defaults to False.
-        me_type: List[Literal['optcomb', 't2', 's0']], optional
+        me_type: Literal['optcomb', 't2s0', 'echo'], optional
             The type of multi-echo functional file to retrieve and process. Only for multi-echo
-            datasets. Can be multiple. This parameter is ignored for single-echo datasets. 'optcomb' returns the optimally combined
-            multi-echo functional files. 't2' returns the T2* map time series estimated from the multi-echo data.
-            's0' returns the S0 map time series estimated from the multi-echo data. Defaults to ['optcomb']. If
-            't2' or 's0' is selected, the echo_pipeline must be set to True or previously run to generate the T2* and S0 maps.
-        echo_pipeline : bool, optional
-            For the Euskalibut dataset. Whether to estimate T2* and S0 from multi-echo fMRI data using a log-linear fit
-            and use the estimated T2* and S0 values for preprocessing instead of the raw echo data. Defaults to False.
+            datasets. This parameter is ignored for single-echo datasets. 'optcomb' preprocesses the optimally combined
+            multi-echo functional files. 't2s0' preprocesses the T2* and S0 map time series estimated from the multi-echo data.
+            'echo' preprocesses each individual echo separately. Defaults to 'optcomb'. If
+            't2s0' is selected, the T2* and S0 maps will first be estimated from the multi-echo data using a log-linear fit, and
+            then the estimated T2* and S0 time series will be preprocessed using the same preprocessing steps as the optimally combined data.
+        skip_me_fit : bool, optional
+            For the Euskalibut dataset. Whether to skip estimating T2* and S0 from multi-echo fMRI data using a log-linear fit.
+            For example, you would set skip_me_fit to True if you already estimated T2* and S0 and just want to re-run the preprocessing
+            pipeline on the T2* and S0 estimates. This parameter is ignored for NSD since it is a single-echo dataset. If not provided, the default is True.
+            Defaults to True.
         """
         # check workbench is available in the system for surface-based preprocessing
         if func_type == "surface":
@@ -141,10 +141,10 @@ class PreprocessingPipeline:
                     "Workbench command line tool 'wb_command' not found. Surface-based preprocessing requires workbench to be installed and configured on your system."
                 )
         # check that ANTS is available in the system for multi-echo fitting
-        if echo_pipeline:
+        if me_type in ["t2s0", "echo"]:
             if not shutil.which("antsApplyTransforms"):
                 raise RuntimeError(
-                    "ANTs command line tool 'antsApplyTransforms' not found. Multi-echo fitting requires ANTs to be installed and configured on your system."
+                    "ANTs command line tool 'antsApplyTransforms' not found. Multi-echo preprocessing requires ANTs to be installed and configured on your system."
                 )
 
         # parameter checks and dataset-specific handling
@@ -153,9 +153,9 @@ class PreprocessingPipeline:
             # so we raise an error if the user tries to apply these preprocessing steps to NSD. Additionally,
             # there is no physiological data for the nsdimagery task in NSD, so we skip physio preprocessing for that task and
             # warn the user if they try to apply physio preprocessing to that task.
-            if echo_pipeline:
+            if skip_me_fit:
                 warnings.warn(
-                    "Echo pipeline is not applicable to NSD dataset since there are no multi-echo data, so echo_pipeline parameter will be ignored."
+                    "Echo pipeline is not applicable to NSD dataset since there are no multi-echo data, so skip_me_fit parameter will be ignored."
                 )
             if func_type == "surface":
                 raise ValueError(
@@ -167,21 +167,14 @@ class PreprocessingPipeline:
                         "Skipping physiological preprocessing for this task in NSD dataset has no effect - no physio data for nsdimagery task."
                     )
                 skip_physio = True
-        # check that echo_pipeline is not applied to surface files -
+        # check that 't2s0' or 'echo' estimation is not applied to surface files -
         # individual echo files are not available in surface format
-        if echo_pipeline and func_type == "surface":
+        # TODO: implement multi-echo preprocessing for surface files in the future
+        if me_type != "optcomb" and func_type == "surface":
             raise ValueError(
-                "Echo pipeline cannot be applied to surface files since individual echos are not available."
+                "Multi-echo pipeline cannot be applied to surface files since individual echos are not available in surface format."
             )
-        # currently t2 and s0 map preprocessing (after estimation) is only implemented for volume files,
-        # so we raise an error if the user tries to apply t2 or s0 map preprocessing to surface files
-        # TODO: implement t2 and s0 map preprocessing for surface files in the future, which would involve
-        # mapping the t2 and s0 estimates to the surface and then applying the surface-based preprocessing
-        # steps using the mapped t2 and s0 values instead of the raw functional data.
-        if ("t2" in me_type or "s0" in me_type) and func_type == "surface":
-            raise ValueError(
-                "T2 and S0 map preprocessing cannot be applied to surface files since it is only implemented for volume files."
-            )
+
         # check that both func and physio are not skipped
         if skip_func and skip_physio:
             raise ValueError(
@@ -220,7 +213,6 @@ class PreprocessingPipeline:
                 fwhm = FWHM_EUSKALIBUR
                 tr = TR_EUSKALIBUR
                 mask = MASK_EUSKALIBUR
-                resample = False
                 remove_dummy = True
                 physio_columns = PHYSIO_COLUMNS_EUSKALIBUR
             elif self.dataset == "nsd":
@@ -230,7 +222,6 @@ class PreprocessingPipeline:
                 # subject functional masks are different for each subject and are generated as part of the additional preprocessing steps, so
                 # we retrieve the subject-specific mask here rather than using a constant template mask as in the other datasets
                 mask = self.file_mapper.get_subject_mask()
-                resample = False
                 remove_dummy = False  # NSD data is already preprocessed and does not have dummy volumes, so we do not want to remove any volumes here
                 physio_columns = PHYSIO_COLUMNS_NSD
             else:
@@ -239,13 +230,11 @@ class PreprocessingPipeline:
             # functional MRI preprocessing
             if not skip_func:
                 # multi-echo pipeline only applicable to EuskalIBUR since NSD is a single-echo dataset
-                if echo_pipeline and self.dataset == "euskalibur":
+                if not skip_me_fit and self.dataset == "euskalibur":
                     if verbose:
-                        print(
-                            "Applying multi-echo preprocessing pipeline to estimate T2* and S0 maps"
-                        )
+                        print("Estimating T2* and S0 maps from multi-echo data")
                     # estimate t2* and s0 maps from multi-echo data
-                    self._multiecho_pipeline(
+                    self._estimate_t2s0_maps(
                         task=task_proc,
                         sessions=sessions,
                         echo_times=ECHOS_EUSKALIBUR,
@@ -253,55 +242,127 @@ class PreprocessingPipeline:
                     )
                     assert isinstance(self.file_mapper, FileMapperBids)
                     self.file_mapper.refresh_layout()
-                # loop through multi-echo types (for multi-echo datasets) or just once for single-echo datasets
-                for me in me_type:
-                    # print which multi-echo type is being processed
-                    if self.dataset == "euskalibur" and me_type != ["optcomb"]:
-                        print(f"Processing multi-echo type: {me}")
 
-                    # get fmri files for task
+                # print which multi-echo type is being processed
+                if self.dataset == "euskalibur":
+                    print(f"Processing multi-echo type: {me_type}")
+
+                # get fmri files for task
+                if me_type == "optcomb":
                     fmri_files = self.file_mapper.get_fmri_files(
-                        task_proc, sessions=sessions, func_type=func_type, me_type=me
+                        task_proc,
+                        sessions=sessions,
+                        func_type=func_type,
+                        me_type=me_type,
                     )
-                    # loop through fmri files and preprocess
-                    for fmri_file in fmri_files:
-                        if verbose:
-                            print(f"Preprocessing fMRI file: {fmri_file}")
+                elif me_type == "t2s0":
+                    t2_files = self.file_mapper.get_fmri_files(
+                        task_proc, sessions=sessions, func_type=func_type, me_type="t2"
+                    )
+                    s0_files = self.file_mapper.get_fmri_files(
+                        task_proc, sessions=sessions, func_type=func_type, me_type="s0"
+                    )
+                    fmri_files = t2_files + s0_files
+                elif me_type == "echo":
+                    fmri_files = self.file_mapper.get_echo_files(
+                        task_proc,
+                        sessions=sessions,
+                    )
+                    # multi-echo files are returned as a list of lists where each sublist contains the echo files for a single run,
+                    # so we flatten this to get a single list of echo files
+                    fmri_files = [
+                        echo_file for run_files in fmri_files for echo_file in run_files
+                    ]
+                else:
+                    raise ValueError(f"Unknown multi-echo type: {me_type}")
 
-                        # Apply the functional MRI preprocessing pipeline
-                        if func_type == "volume":
-                            fmri_proc = func_volume_pipeline(
-                                func_fp=fmri_file,
-                                tr=tr,
-                                brain_mask_fp=mask,
-                                fwhm=fwhm,
-                                dummy_vols=DUMMY_VOLUMES,
-                                highpass=HIGHPASS,
-                                resample=resample,
-                                remove_dummy=remove_dummy,
+                # set parameters based on multi-echo type
+                if me_type == "optcomb":
+                    highpass_filter = True
+                    detrend = True
+                    spatial_smooth = True
+                    standardize = True
+                    to_std = False
+                elif me_type == "t2s0":
+                    # t2 and s0 estimates need to be transformed to standard space before preprocessing
+                    highpass_filter = True
+                    detrend = True
+                    spatial_smooth = True
+                    standardize = True
+                    to_std = True
+                elif me_type == "echo":
+                    # for the individual echo files, we apply a more minimal preprocessing pipeline that only includes transformation to standard space, since
+                    # these steps are typically applied after combining the echoes rather than to the individual echo files.
+                    highpass_filter = False
+                    detrend = False
+                    spatial_smooth = False
+                    standardize = False
+                    to_std = True
+                else:
+                    raise ValueError(f"Unknown multi-echo type: {me_type}")
+
+                # loop through fmri files and preprocess
+                for fmri_file in fmri_files:
+                    if verbose:
+                        print(f"Preprocessing fMRI file: {fmri_file}")
+
+                    # get transformation files to transform to standard space (if applicable) from file mapper
+                    if to_std:
+                        if not isinstance(self.file_mapper, FileMapperBids):
+                            raise TypeError(
+                                f"Expected FileMapperBids for multi-echo fitting, got {type(self.file_mapper)}"
                             )
-                        elif func_type == "surface":
-                            fmri_proc = func_surface_pipeline(
-                                func_fp=fmri_file,
-                                tr=tr,
-                                dummy_vols=DUMMY_VOLUMES,
-                                highpass=HIGHPASS,
-                                fwhm=fwhm,
-                                remove_dummy=remove_dummy,
-                                surface_template_lh=SURFACE_LH,
-                                surface_template_rh=SURFACE_RH,
-                            )
-                        else:
-                            raise ValueError(f"Unknown functional type: {func_type}")
-                        # Write out the preprocessed fMRI file
-                        self.write_out_fmri_file(
-                            fmri_proc,
-                            fmri_file,
-                            func_type=func_type,
-                            me_type=me
-                            if (self.dataset == "euskalibur") and (me in ["t2", "s0"])
-                            else None,  # pass me_type for euskalibur multi-echo data, but not for NSD since it is single-echo
+                        scan_file_ents = self.file_mapper.layout.parse_file_entities(
+                            fmri_file
                         )
+                        std_ref_fp, native_to_t1, t1_to_std = (
+                            self._get_std_transform_files(scan_file_ents)
+                        )
+                    else:
+                        std_ref_fp = None
+                        native_to_t1 = None
+                        t1_to_std = None
+
+                    # Apply the functional MRI preprocessing pipeline
+                    if func_type == "volume":
+                        fmri_proc = func_volume_pipeline(
+                            func_fp=fmri_file,
+                            tr=tr,
+                            brain_mask_fp=mask,
+                            fwhm=fwhm,
+                            dummy_vols=DUMMY_VOLUMES,
+                            highpass=HIGHPASS,
+                            remove_dummy=remove_dummy,
+                            detrend=detrend,
+                            spatial_smooth=spatial_smooth,
+                            standardize=standardize,
+                            highpass_filter=highpass_filter,
+                            to_std=to_std,
+                            native_to_t1w_fp=native_to_t1,
+                            t1w_to_std_fp=t1_to_std,
+                            std_space_ref_fp=std_ref_fp,
+                        )
+                    elif func_type == "surface":
+                        fmri_proc = func_surface_pipeline(
+                            func_fp=fmri_file,
+                            tr=tr,
+                            dummy_vols=DUMMY_VOLUMES,
+                            highpass=HIGHPASS,
+                            fwhm=fwhm,
+                            remove_dummy=remove_dummy,
+                            surface_template_lh=SURFACE_LH,
+                            surface_template_rh=SURFACE_RH,
+                            detrend=detrend,
+                            spatial_smooth=spatial_smooth,
+                            standardize=standardize,
+                            highpass_filter=highpass_filter,
+                        )
+                    else:
+                        raise ValueError(f"Unknown functional type: {func_type}")
+                    # Write out the preprocessed fMRI file
+                    self.write_out_fmri_file(
+                        fmri_proc, fmri_file, func_type=func_type, me_type=me_type
+                    )
 
             # physio preprocessing pipeline (EuskalIBUR and NSD only)
             if self.dataset in ["euskalibur", "nsd"] and not skip_physio:
@@ -445,7 +506,16 @@ class PreprocessingPipeline:
         ) -> str:
             """Create a BIDS-ish output filename with `desc-preprocfinal`."""
             base = _strip_known_fmri_extensions(name)
-            if me_type in ["t2", "s0"]:
+            if me_type == "t2s0":
+                # we assume that 't2' and 's0' are included in the original file name
+                if "t2" in base:
+                    me_type = "t2"
+                elif "s0" in base:
+                    me_type = "s0"
+                else:
+                    raise ValueError(
+                        f"Multi-echo type 't2s0' was specified but could not be identified in file name '{name}'. Expected 't2' or 's0' in file name for 't2s0' multi-echo type."
+                    )
                 me_ext = me_type
                 source_desc = f"desc-preproc{me_type}"
             else:
@@ -543,7 +613,7 @@ class PreprocessingPipeline:
             f"{output_dir}/{file_new}", sep="\t", index=False, compression="gzip"
         )
 
-    def _multiecho_pipeline(
+    def _estimate_t2s0_maps(
         self,
         task: str,
         echo_times: List[float],
@@ -606,32 +676,12 @@ class PreprocessingPipeline:
             assert isinstance(s0_img, nib.nifti1.Nifti1Image), (
                 f"Expected S0 image to be a NIfTI image, got {type(s0_img)}"
             )
-            # get files necessary for transforming t2* and s0 maps to standard space using antsApplyTransforms
-            std_ref, native_to_t1, t1_to_std = self._find_std_transform_files(
-                scan_file_ents
-            )
-            # ANTs only accepts file paths, so the helper round-trips these images
-            # through a temporary directory and returns the transformed images.
-            t2_img_std = multiecho_to_std(
-                img=t2_img,
-                std_space_ref_fp=std_ref,
-                native_to_t1w_fp=native_to_t1,
-                t1w_to_std_fp=t1_to_std,
-                output_fp=None,
-            )
-            s0_img_std = multiecho_to_std(
-                img=s0_img,
-                std_space_ref_fp=std_ref,
-                native_to_t1w_fp=native_to_t1,
-                t1w_to_std_fp=t1_to_std,
-                output_fp=None,
-            )
             # save out the transformed T2* and S0 images to the same directory as the original echo files with a modified file name indicating that they are T2* and S0 maps
             t2_output_fp = (
                 scan_files[0]
                 .replace(
                     "_echo-1",
-                    "_space-MNI152NLin2009cAsym",  # first, remove the echo identifier
+                    "",  # first, remove the echo identifier
                 )
                 .replace(
                     "desc-preproc",
@@ -642,17 +692,17 @@ class PreprocessingPipeline:
                 scan_files[0]
                 .replace(
                     "_echo-1",
-                    "_space-MNI152NLin2009cAsym",  # first, remove the echo identifier
+                    "",  # first, remove the echo identifier
                 )
                 .replace(
                     "desc-preproc",
                     "desc-preprocs0",  # then add the s0 identifier to the descriptor
                 )
             )
-            nib.nifti1.save(t2_img_std, t2_output_fp)
-            nib.nifti1.save(s0_img_std, s0_output_fp)
+            nib.nifti1.save(t2_img, t2_output_fp)
+            nib.nifti1.save(s0_img, s0_output_fp)
 
-    def _find_std_transform_files(
+    def _get_std_transform_files(
         self, file_ents: dict[str, str]
     ) -> Tuple[str, str, str]:
         """Find the standard space transform files (e.g. ANTs .h5 files) for a given session and run.
