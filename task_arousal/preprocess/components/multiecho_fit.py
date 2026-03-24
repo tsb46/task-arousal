@@ -3,9 +3,6 @@ Module for estimation of T2* and S0 from multi-echo fMRI data using a log-linear
 peformed using tedana.
 """
 
-import subprocess
-import tempfile
-
 from typing import List
 
 import nibabel as nib
@@ -13,8 +10,13 @@ import numpy as np
 
 from nilearn.masking import apply_mask, unmask
 from scipy.sparse import csc_matrix, eye, kron
-from scipy.sparse.linalg import splu
 from tedana.utils import make_adaptive_mask
+
+from task_arousal.quadratic_penalty import (
+    QuadraticPenaltySolver,
+    as_csc,
+    second_difference_matrix,
+)
 
 
 def fit_multiecho(fp_echos: List[str], echo_times: List[float], mask_fp: str):
@@ -86,101 +88,6 @@ def fit_multiecho(fp_echos: List[str], echo_times: List[float], mask_fp: str):
     t2s_full_ts_img = unmask(t2s_full_ts.T, mask_img)
     s0_full_ts_img = unmask(s0_full_ts.T, mask_img)
     return t2s_full_ts_img, s0_full_ts_img
-
-
-def multiecho_to_std(
-    img: str | nib.nifti1.Nifti1Image,
-    std_space_ref_fp: str,
-    native_to_t1w_fp: str,
-    t1w_to_std_fp: str,
-    output_fp: str | None = None,
-) -> nib.nifti1.Nifti1Image:
-    """
-    Apply the standard fMRIPrep spatial transformations to the given image, to bring it into MNI space. This is necessary
-    for the T2* and S0 images estimated from multi-echo data, which are in the same space as the original BOLD data and thus require
-    the same transformations to be applied.
-
-    Inspired from:
-    https://tedana.readthedocs.io/en/stable/faq.html#warping-scanner-space-fmriprep-outputs-to-standard-space
-
-    Parameters
-    ----------
-    img : str or nib.Nifti1Image
-        Image to transform. If a NIfTI image is provided, it will be written to a
-        temporary directory before calling ANTs.
-    std_space_ref_fp : str
-        File path to the standard space reference image (e.g. MNI152NLin2009cAsym).
-    native_to_t1w_fp : str
-        File path to the fMRIPrep-generated transformation file from native space to T1w space (e.g. from-boldref_to-T1w_mode-image_xfm.txt).
-    t1w_to_std_fp : str
-        File path to the fMRIPrep-generated transformation file from T1w space to standard space (e.g. from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5).
-    output_fp : str or None
-        File path where the transformed image should be saved. If None, a
-        temporary output path is used and the transformed image is returned in memory.
-
-    Returns
-    -------
-    nib.Nifti1Image
-        The transformed image.
-
-    """
-
-    def _load_materialized_nifti(img_fp: str) -> nib.nifti1.Nifti1Image:
-        loaded_img = nib.nifti1.load(img_fp)
-        if not isinstance(loaded_img, nib.nifti1.Nifti1Image):
-            raise TypeError(f"Expected NIfTI image at {img_fp}, got {type(loaded_img)}")
-        return nib.nifti1.Nifti1Image(
-            np.asanyarray(loaded_img.dataobj),
-            affine=loaded_img.affine,
-            header=loaded_img.header.copy(),
-            extra=loaded_img.extra.copy(),
-        )
-
-    with tempfile.TemporaryDirectory(prefix="task_arousal_multiecho_") as tmpdir:
-        if isinstance(img, nib.nifti1.Nifti1Image):
-            img_fp = f"{tmpdir}/multiecho_native.nii.gz"
-            nib.nifti1.save(img, img_fp)
-        else:
-            img_fp = img
-
-        resolved_output_fp = output_fp or f"{tmpdir}/multiecho_std.nii.gz"
-
-        try:
-            subprocess.run(
-                [
-                    "antsApplyTransforms",
-                    "-e",
-                    "3",
-                    "-i",
-                    img_fp,
-                    "-r",
-                    std_space_ref_fp,
-                    "-o",
-                    resolved_output_fp,
-                    "-n",
-                    "LanczosWindowedSinc",
-                    "-t",
-                    t1w_to_std_fp,
-                    "-t",
-                    native_to_t1w_fp,
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(
-                "antsApplyTransforms failed while transforming multi-echo image: "
-                f"{exc.stderr.strip() or exc.stdout.strip() or exc}"
-            ) from exc
-
-        if output_fp is None:
-            return _load_materialized_nifti(resolved_output_fp)
-
-    saved_img = nib.nifti1.load(output_fp)
-    if not isinstance(saved_img, nib.nifti1.Nifti1Image):
-        raise TypeError(f"Expected NIfTI image at {output_fp}, got {type(saved_img)}")
-    return saved_img
 
 
 class TemporalDecayEstimator:
@@ -320,7 +227,7 @@ class TemporalDecayEstimator:
         assemble the right-hand side and call the cached solver.
         """
         # Build second-difference matrix
-        D = self._second_diff_matrix(self.T)
+        D = second_difference_matrix(self.T)
         DtD = D.T @ D  # (T, T)
         penalty = kron(
             csc_matrix(DtD),
@@ -343,22 +250,10 @@ class TemporalDecayEstimator:
             XtX = X.T @ X
             A_data = kron(eye(self.T, format="csc"), csc_matrix(XtX), format="csc")
             self._design_matrices[n_good_echos] = X
-            self._solvers[n_good_echos] = splu(A_data + penalty)
-
-    # -----------------------------
-    def _second_diff_matrix(self, T):
-        """Construct the temporal second-difference operator.
-
-        Each row encodes ``[1, -2, 1]`` across three consecutive timepoints. Applying
-        this operator to a parameter time course measures local curvature, so squaring
-        and summing these values penalizes rapid bending over time.
-        """
-        if T < 3:
-            return np.zeros((0, T), dtype=float)
-        D = np.zeros((T - 2, T))
-        for t in range(T - 2):
-            D[t, t : t + 3] = [1, -2, 1]
-        return D
+            self._solvers[n_good_echos] = QuadraticPenaltySolver(
+                as_csc(A_data),
+                as_csc(penalty),
+            )
 
     def _validate_good_echo_count(self, n_good_echos: int) -> int:
         """Validate the adaptive-mask echo count for a voxel or voxel group."""
