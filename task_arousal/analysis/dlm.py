@@ -145,7 +145,7 @@ class DistributedLagPhysioModel:
         self.nan_mask = np.isnan(x_basis).any(axis=1)
 
         # fit Linear regression model
-        self.glm = Ridge(fit_intercept=False, alpha=10000)
+        self.glm = Ridge(fit_intercept=False, alpha=1)
         self.glm.fit(
             # normalize X basis
             np.array(zscore(x_basis[~self.nan_mask])),
