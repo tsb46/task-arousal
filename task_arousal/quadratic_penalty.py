@@ -28,6 +28,9 @@ def second_difference_matrix(size: int) -> np.ndarray:
         return np.zeros((0, size), dtype=float)
     diff = np.zeros((size - 2, size), dtype=float)
     for idx in range(size - 2):
+        # Apply [1, -2, 1] to neighboring entries so D @ beta measures discrete
+        # curvature. Penalizing D.T @ D therefore discourages rapid local bending
+        # without forcing the entire vector to be constant.
         diff[idx, idx : idx + 3] = [1.0, -2.0, 1.0]
     return diff
 
@@ -49,6 +52,8 @@ def second_difference_penalty(size: int, weight: float) -> csc_matrix:
     if weight == 0 or operator.shape[0] == 0:
         return zero_penalty(size)
     operator_csc = csc_matrix(operator)
+    # The quadratic form beta.T @ (D.T D) @ beta equals ||D beta||^2, which is the
+    # standard discrete roughness penalty used throughout the TE model.
     return weight * (operator_csc.T @ operator_csc)
 
 
@@ -89,6 +94,9 @@ class QuadraticPenaltySolver:
                 "normal_matrix and penalty must have the same shape, got "
                 f"{normal_shape} and {penalty_shape}."
             )
+        # The model-specific code constructs G from data and P from prior smoothness
+        # assumptions, then this class handles the generic penalized solve
+        # (G + P) beta = rhs.
         self.system_matrix = self.normal_matrix + self.penalty
         self._solver = splu(self.system_matrix)
 
