@@ -108,10 +108,13 @@ class FileMapperBids:
         self,
         task: str,
         sessions: List[str] | None = None,
+        preproc_type: Literal["orig", "final"] = "orig",
     ) -> list[Tuple[str]]:
         """
         Get the separate echos from all fMRI files from all sessions for a specific task. Note,
-        these are the separate echo files that are input to the tedana T2* and S0 estimation.
+        these are the separate echo files that are input to the tedana T2* and S0 estimation or
+        for echo-wise preprocessing, not the optimally combined files that are typically used for analysis.
+        Only for multi-echo datasets. Note, echo files are only available for 'volume' functional data type.
 
         Parameters
         ----------
@@ -119,6 +122,11 @@ class FileMapperBids:
             The task identifier.
         sessions : list of str, optional
             The sessions to include. If None, all sessions are included.
+        preproc_type : {'orig', 'final'}
+            The type of fMRI files to retrieve. 'orig' returns files
+            with the 'preproc' description (output of fMRIPrep preprocessing).
+            'final' returns files with the 'preprocfinal' description
+            (output of additional final preprocessing steps).
 
         Returns
         -------
@@ -134,6 +142,12 @@ class FileMapperBids:
                         f"Session '{session}' is not valid for subject '{self.subject}'."
                     )
 
+        # set desc based on preproc_type
+        if preproc_type == "orig":
+            desc = "preproc"
+        elif preproc_type == "final":
+            desc = "preprocfinal"
+
         fmri_files = []
         for session in sessions if sessions is not None else self.sessions:
             # check for multiple runs
@@ -141,10 +155,12 @@ class FileMapperBids:
             # if multiple runs, loop through and get files for each run
             if len(runs) > 1:
                 for run in runs:
-                    files = self.get_session_echo_files(session, task, run=run)
+                    files = self.get_session_echo_files(
+                        session, task, run=run, desc=desc
+                    )
                     fmri_files.append(files)
             else:
-                files = self.get_session_echo_files(session, task)
+                files = self.get_session_echo_files(session, task, desc=desc)
                 fmri_files.append(files)
         return fmri_files
 
@@ -329,6 +345,46 @@ class FileMapperBids:
                 event_files.append(files)
         return event_files
 
+    def get_confound_files(
+        self, task: str, sessions: List[str] | None = None
+    ) -> list[str]:
+        """
+        Get the confound time series fMRIPrep output from all sessions for a specific task.
+
+        Parameters
+        ----------
+        task : str
+            The task identifier.
+        sessions : list of str, optional
+            The sessions to include. If None, all sessions are included.
+
+        Returns
+        -------
+        list of str
+            A list of confound file paths.
+        """
+        # if session is selected, ensure that it's valid
+        if sessions is not None:
+            for session in sessions:
+                if session not in self.sessions:
+                    raise ValueError(
+                        f"Session '{session}' is not valid for subject '{self.subject}'."
+                    )
+
+        confound_files = []
+        for session in sessions if sessions is not None else self.sessions:
+            # check for multiple runs
+            runs = self.tasks_runs[task][session]
+            # if multiple runs, loop through and get files for each run
+            if len(runs) > 1:
+                for run in runs:
+                    files = self.get_session_confound_files(session, task, run=run)
+                    confound_files.extend(files)
+            else:
+                files = self.get_session_confound_files(session, task)
+                confound_files.extend(files)
+        return confound_files
+
     def get_matching_files(
         self,
         file_entities: dict[str, str],
@@ -458,6 +514,7 @@ class FileMapperBids:
         self,
         session: str,
         task: str,
+        desc: Literal["preproc", "preprocfinal"] | None = "preproc",
         run: str | None = None,
     ):
         """
@@ -471,6 +528,10 @@ class FileMapperBids:
             The task identifier.
         run : str, optional
             The run identifier. If provided, only files for this run will be returned.
+        desc : Literal['preproc', 'preprocfinal'] | None, optional
+            The description entity to filter files. Defaults to 'preproc' for
+            the output of fMRIPrep preprocessing. Use 'preprocfinal' for
+            files that have undergone additional (final) preprocessing steps.
 
         Returns
         -------
@@ -482,6 +543,14 @@ class FileMapperBids:
         else:
             raise NotImplementedError(
                 f"Echo file retrieval not implemented for {self.dataset} dataset."
+            )
+        # sanity check that the order of echo times is increasing - this is important for the
+        # logic of how we retrieve echo files based on echo labels in the BIDS files
+        if not all(
+            earlier < later for earlier, later in zip(echo_times, echo_times[1:])
+        ):
+            raise ValueError(
+                "Echo times for the dataset are not in increasing order. The current implementation of get_session_echo_files assumes that echo times are in increasing order and that the echo labels in the BIDS files correspond to the order of echo times. Please ensure that echo times are in increasing order and that the BIDS files are labeled correctly."
             )
         # convert to echo labels (this assumes the echos are labeled in the BIDS files as 'echo-1',
         # 'echo-2', etc. and that the order of echo times in ECHOS_EUSKALIBUR corresponds to the echo labels)
@@ -495,7 +564,7 @@ class FileMapperBids:
                 run=run,
                 suffix="bold",
                 extension=".nii.gz",
-                desc="preproc",
+                desc=desc,
                 echo=echo_label,
             )
             if len(files) == 0:
@@ -572,6 +641,7 @@ class FileMapperBids:
             extension=extension,
             run=run,
             desc=_desc,
+            echo=None,
         )
 
         filenames = [f.path for f in bids_files]
@@ -614,6 +684,38 @@ class FileMapperBids:
             extension=".tsv.gz",
             run=run,
             desc=desc,
+        )
+        filenames = [f.path for f in bids_files]
+        return filenames
+
+    def get_session_confound_files(
+        self, session: str, task: str, run: str | None = None
+    ) -> list[str]:
+        """
+        Get the confound time series fMRIPrep output file paths for a specific session and task.
+
+        Parameters
+        ----------
+        session : str
+            The session identifier.
+        task : str
+            The task identifier.
+        run : str, optional
+            The run identifier. If provided, only files for this run will be returned.
+
+        Returns
+        -------
+        list of str
+            A list of confound file paths.
+        """
+        bids_files = self.layout.get(
+            subject=self.subject,
+            session=session,
+            task=task,
+            suffix="timeseries",
+            desc="confounds",
+            extension=".tsv",
+            run=run,
         )
         filenames = [f.path for f in bids_files]
         return filenames

@@ -18,6 +18,7 @@ class DatasetLoad(TypedDict):
     fmri: Any
     physio: Any
     events: Any
+    confounds: Any
 
 
 def load_physio(fp: str, normalize: bool = False) -> pd.DataFrame:
