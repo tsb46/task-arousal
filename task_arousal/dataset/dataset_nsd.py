@@ -49,13 +49,14 @@ class DatasetNsd:
         self,
         task: str,
         func_type: Literal["volume", "surface"] = "volume",
-        me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
+        me_type: Literal["optcomb", "t2", "s0", "echo"] = "optcomb",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
         bandpass: tuple[float, float] | None = None,
         load_func: bool = True,
         load_physio: bool = True,
+        load_confounds: bool = False,
         verbose: bool = True,
     ) -> DatasetLoad:
         """
@@ -65,7 +66,7 @@ class DatasetNsd:
         ----------
         func_type : Literal["volume", "surface"], optional
             The type of functional data, either "volume" or "surface". "Surface" is not currently supported for NSD dataset. Default is "volume".
-        me_type : Literal["optcomb", "t2", "s0"], optional
+        me_type : Literal["optcomb", "t2", "s0", "echo"], optional
             The type of multi-echo data to load. Multi-echo data is not available for NSD dataset,
             so this parameter is ignored. Default is "optcomb".
         task : str
@@ -87,6 +88,9 @@ class DatasetNsd:
             this parameter is kept for API consistency. Parameter is ignored. Default is True.
         load_physio : bool, optional
             Whether to load physiological data. Default is True.
+        load_confounds : bool, optional
+            Whether to load confound regressors. Since this dataset does not contain confound regressors,
+            this parameter is kept for API consistency. Parameter is ignored. Default is False.
         verbose : bool, optional
             Whether to print progress messages. Default is True.
         """
