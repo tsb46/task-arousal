@@ -76,6 +76,7 @@ def main(
     task: str | None,
     space: Literal["surface", "volume"] = "volume",
     me_type: Literal["optcomb", "t2", "s0", "echo"] = "optcomb",
+    physio_regressor: str | None = None,
 ) -> None:
     """
     Perform full analysis pipeline on selected subject
@@ -96,6 +97,9 @@ def main(
         Type of multi-echo data to load (optcomb, t2, s0, or echo). Only relevant for volume data in the EuskalIBUR dataset. If
         "echo" is selected, all echo data will be loaded and TE-curve analyses will be performed.
         Ignored for surface data and NSD dataset.
+    physio_regressor : str | None
+        Restrict DLM with physiological regressors analysis to specific physiological regressor. Only relevant if performing dlm_physio analysis.
+        If not specified, DLM with physiological regressors analysis will be performed for all available physiological regressors.
     """
     # check inputs
     if space == "surface" and dataset != "euskalibur":
@@ -131,7 +135,14 @@ def main(
             tasks_event = TASKS_EVENT_EUSKALIBUR
         # create dict mapping task to TR - this is the same for each task in EuskalIBUR dataset
         tr = {task: TR_EUSKALIBUR for task in tasks}
-        physio_labels = PHYSIO_LABELS_EUSKALIBUR
+        if physio_regressor is not None:
+            if physio_regressor not in PHYSIO_LABELS_EUSKALIBUR:
+                raise ValueError(
+                    f"Physiological regressor {physio_regressor} not recognized for EuskalIBUR dataset"
+                )
+            physio_labels = [physio_regressor]
+        else:
+            physio_labels = PHYSIO_LABELS_EUSKALIBUR
         # For EuskalIBUR, subject is guaranteed to be non-None
         _subject: str = subject
         # create output directory if it doesn't exist
@@ -151,7 +162,14 @@ def main(
         # TR is different for each task in NSD dataset, so we will handle TR in the file mapper class rather than as a constant
         tr = {task: ds.file_mapper.get_tr(task) for task in tasks}
 
-        physio_labels = PHYSIO_LABELS_NSD
+        if physio_regressor is not None:
+            if physio_regressor not in PHYSIO_LABELS_NSD:
+                raise ValueError(
+                    f"Physiological regressor {physio_regressor} not recognized for NSD dataset"
+                )
+            physio_labels = [physio_regressor]
+        else:
+            physio_labels = PHYSIO_LABELS_NSD
         # For NSD, subject is guaranteed to be non-None
         _subject: str = subject
         # create output directory if it doesn't exist
@@ -737,6 +755,24 @@ if __name__ == "__main__":
         default="optcomb",
         help="Type of multi-echo data to load (optcomb, t2, s0, or echo). Only relevant for volume data in the EuskalIBUR dataset. Ignored for surface data and NSD dataset.",
     )
+    # add optional argument to restrict dlm_physio analysis to specific physio regressor
+    parser.add_argument(
+        "-r",
+        "--physio_regressor",
+        type=str,
+        choices=PHYSIO_LABELS_EUSKALIBUR,  # use physio labels from EuskalIBUR since they are more extensive, will just be ignored for NSD dataset
+        required=False,
+        default=None,
+        help="Restrict DLM with physiological regressors analysis to specific physiological regressor. Only relevant if performing dlm_physio analysis. If not specified, DLM with physiological regressors analysis will be performed for all available physiological regressors.",
+    )
     # parse arguments
     args = parser.parse_args()
-    main(args.dataset, args.subject, args.analysis, args.task, args.space, args.me_type)
+    main(
+        args.dataset,
+        args.subject,
+        args.analysis,
+        args.task,
+        args.space,
+        args.me_type,
+        args.physio_regressor,
+    )
