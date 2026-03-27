@@ -3,6 +3,7 @@ Distributed lag modeling of physio signals, events, and fMRI data
 """
 
 from dataclasses import dataclass
+import warnings
 from typing import List, Literal
 
 import numpy as np
@@ -77,7 +78,7 @@ class DistributedLagPhysioModel:
     Methods
     -------
     fit(X,y):
-        regress lags of physio signal onto voxel-wise functional time courses.
+        regress per-run lags of physio signal onto voxel-wise functional time courses.
 
     predict()
 
@@ -104,32 +105,64 @@ class DistributedLagPhysioModel:
         self.knots = knots
         self.basis_type = basis_type
 
-    def fit(self, X: np.ndarray, Y: np.ndarray):
+    def fit(self, X: List[np.ndarray] | np.ndarray, Y: List[np.ndarray] | np.ndarray):
         """
         fit regression model of physio lag spline basis regressed on functional
-        time courses
+        time courses.
 
         Parameters
         ----------
-        X: np.ndarray
-            The physio time course represented in an ndarray with time points
-            along the rows and a single column (# of time points, 1).
-        Y: np.ndarray
-            functional MRI time courses represented in an ndarray with time
-            points along the rows and vertices in the columns (# of time
-            points, # of vertices).
+        X: List[np.ndarray] | np.ndarray
+            One physio time course per run. Each run must be represented as a
+            2D array with time points along the rows and a single column
+            ``(# of time points, 1)``. A single array is still accepted as a
+            one-run compatibility path, but passing a list is preferred so lag
+            construction respects run boundaries.
+        Y: List[np.ndarray] | np.ndarray
+            One functional run per physio run. Each run must be represented as a
+            2D array with time points along the rows and vertices in the columns
+            ``(# of time points, # of vertices)``.
 
         Returns
         -------
         self: object
             Fitted model instance.
         """
-        # check that X and Y have same number of time points
-        if X.shape[0] != Y.shape[0]:
-            raise ValueError("X and Y must have the same number of time points")
-        # check that X has a single column
-        if X.ndim != 2 or X.shape[1] != 1:
-            raise ValueError("X must have a single column")
+        if isinstance(X, np.ndarray):
+            X_runs = [X]
+            warnings.warn(
+                "Passing a single physio array to DistributedLagPhysioModel.fit() is deprecated; pass a list of per-run arrays instead.",
+                stacklevel=2,
+            )
+        else:
+            X_runs = list(X)
+        if isinstance(Y, np.ndarray):
+            Y_runs = [Y]
+            warnings.warn(
+                "Passing a single fMRI array to DistributedLagPhysioModel.fit() is deprecated; pass a list of per-run arrays instead.",
+                stacklevel=2,
+            )
+        else:
+            Y_runs = list(Y)
+
+        if len(X_runs) == 0 or len(Y_runs) == 0:
+            raise ValueError("X and Y must be non-empty")
+        if len(X_runs) != len(Y_runs):
+            raise ValueError("X and Y must have the same number of runs")
+
+        for run_index, (X_run, Y_run) in enumerate(zip(X_runs, Y_runs)):
+            if X_run.ndim != 2 or X_run.shape[1] != 1:
+                raise ValueError(
+                    f"X[{run_index}] must have shape (time, 1), got {X_run.shape}"
+                )
+            if Y_run.ndim != 2:
+                raise ValueError(
+                    f"Y[{run_index}] must be 2D (time x vertices), got {Y_run.shape}"
+                )
+            if X_run.shape[0] != Y_run.shape[0]:
+                raise ValueError(
+                    f"X[{run_index}] and Y[{run_index}] must have the same number of time points"
+                )
         # create B-spline basis across lags of physio signal
         self.basis = SplineLagBasis(
             knots_per_sec=self.knots_per_sec,
@@ -139,17 +172,25 @@ class DistributedLagPhysioModel:
             basis_type=self.basis_type,  # type: ignore
         )
         self.basis.create(self.nlags, self.neg_nlags)
-        # project physio signal lags on B-spline basis
-        x_basis = self.basis.project(X)
-        # create nan mask for x_basis
-        self.nan_mask = np.isnan(x_basis).any(axis=1)
+
+        x_basis_runs = []
+        y_valid_runs = []
+        self.nan_masks = []
+        for X_run, Y_run in zip(X_runs, Y_runs):
+            x_basis_run = self.basis.project(X_run)
+            nan_mask_run = np.isnan(x_basis_run).any(axis=1)
+            self.nan_masks.append(nan_mask_run)
+            x_basis_runs.append(x_basis_run[~nan_mask_run])
+            y_valid_runs.append(Y_run[~nan_mask_run])
+
+        x_basis_concat = np.vstack(x_basis_runs)
+        y_concat = np.vstack(y_valid_runs)
 
         # fit Linear regression model
         self.glm = Ridge(fit_intercept=False, alpha=1)
         self.glm.fit(
-            # normalize X basis
-            np.array(zscore(x_basis[~self.nan_mask])),
-            Y[~self.nan_mask],
+            np.array(zscore(x_basis_concat, axis=0)),
+            y_concat,
         )
         return self
 
@@ -275,6 +316,11 @@ class DistributedLagEventModel:
         fix the duration of all spline regressors - i.e. the duration after onset of the event.
         If set to None, the regressor duration will be set to the event duration from the event data.
         Note, that if regressor_duration is None, the number of lags (nlags) will vary across events.
+    event_regs
+        Event design matrices are normalized column-wise within each run during
+        regressor construction. This means model coefficients and predictions are
+        parameterized in units of per-run standardized event regressors rather than
+        raw regressor amplitudes.
 
     """
 
@@ -309,6 +355,8 @@ class DistributedLagEventModel:
             List of fMRI 2D datasets (2D - time x voxels) or physio signals (2D - time x signals).
             This should be in the same order as event_dfs (i.e., outcome_data[i] corresponds to event_dfs[i]).
             This should not be concatenated data across runs/sessions.
+            Event regressors are constructed and normalized separately within each run
+            before being concatenated across runs for fitting.
 
         Returns
         -------
@@ -343,7 +391,7 @@ class DistributedLagEventModel:
             knots_per_sec=self.knots_per_sec,
             n_knots=self.n_knots,
             knots=self.knots,
-            basis_type=self.basis_type,
+            basis_type=self.basis_type,  # type: ignore
             regressor_duration=self.regressor_duration,
             regressor_extend=self.regressor_extend,
         )
@@ -359,8 +407,6 @@ class DistributedLagEventModel:
         outcome_concat = np.vstack(outcome_data)
         # concatenate event regressors across sessions/runs
         event_regs_concat = np.vstack(self.event_regs)
-        # zscore event regressors
-        event_regs_concat = np.array(zscore(event_regs_concat, axis=0))
         # fit Ridge regression model
         self.glm = Ridge(fit_intercept=False, alpha=1.0)
         self.glm.fit(X=event_regs_concat, y=outcome_concat)
@@ -386,7 +432,8 @@ class DistributedLagEventModel:
             if n_eval is specified. (default: PREDICT_T_DELTA).
         pred_val: float
             The predicted event value used to predict functional time
-            courses in z-score units (default: 1.0).
+            courses in units of the per-run standardized event regressors
+            (default: 1.0).
         n_eval: int | None
             Fix the number of samples to predict between the event onset and max_duration for
             the predicted functional time course or physio signal. If specified,

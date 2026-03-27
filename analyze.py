@@ -9,10 +9,17 @@ import pickle
 from typing import Literal
 
 import nibabel as nib
+import numpy as np
+from scipy.stats import zscore
+
 from task_arousal.analysis.pca import PCA
 from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
     DistributedLagEventModel,
+)
+from task_arousal.analysis.dlm_echo import (
+    DistributedLagEventEchoModel,
+    DistributedLagPhysioEchoModel,
 )
 
 from task_arousal.dataset.dataset_euskalibur import (
@@ -22,11 +29,8 @@ from task_arousal.dataset.dataset_euskalibur import (
     MOTOR_CONDITIONS as MOTOR_CONDITIONS_EUSKALIBUR,
 )
 from task_arousal.dataset.dataset_nsd import DatasetNsd, NSDIMAGERY_CONDITIONS
-
 from task_arousal.dataset.dataset_utils import DatasetLoad
-from task_arousal.constants import (
-    TR_EUSKALIBUR,
-)
+from task_arousal.constants import TR_EUSKALIBUR, ECHOS_EUSKALIBUR
 
 # define output directory
 OUT_DIRECTORY = "results"
@@ -71,7 +75,7 @@ def main(
     analysis: str | None,
     task: str | None,
     space: Literal["surface", "volume"] = "volume",
-    me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
+    me_type: Literal["optcomb", "t2", "s0", "echo"] = "optcomb",
 ) -> None:
     """
     Perform full analysis pipeline on selected subject
@@ -88,8 +92,9 @@ def main(
         Task to perform analysis on
     space : Literal["surface", "volume"]
         Space to write output in (surface or volume)
-    me_type : Literal["optcomb", "t2", "s0"]
-        Type of multi-echo data to load (optcomb, t2, or s0). Only relevant for volume data in the EuskalIBUR dataset.
+    me_type : Literal["optcomb", "t2", "s0", "echo"] = "optcomb"
+        Type of multi-echo data to load (optcomb, t2, s0, or echo). Only relevant for volume data in the EuskalIBUR dataset. If
+        "echo" is selected, all echo data will be loaded and TE-curve analyses will be performed.
         Ignored for surface data and NSD dataset.
     """
     # check inputs
@@ -161,9 +166,8 @@ def main(
     else:
         _analysis = ANALYSES
 
-    # perform PCA or DLM with physiological regressors for all tasks,
-    # including those without event conditions using concatenated data
-    if any(a in _analysis for a in ["pca", "dlm_physio"]):
+    # perform PCA for all tasks
+    if any(a in _analysis for a in ["pca"]) and me_type != "echo":
         for task in tasks:
             print(
                 f"Loading concatenated data for dataset {dataset}, subject {_subject}, task {task}"
@@ -178,13 +182,35 @@ def main(
                 print(
                     f"PCA analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
+
+    # perform DLM analyses for tasks with event conditions and with physiological signals
+    if any(a in _analysis for a in ["dlm_event", "dlm_physio"]) and me_type != "echo":
+        for task in tasks_event:
+            print(
+                f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event analyses"
+            )
+            data: DatasetLoad = ds.load_data(
+                task=task, func_type=space, concatenate=False, me_type=me_type
+            )  # type: ignore
+
+            if "dlm_event" in _analysis:
+                # perform DLM analysis with event regressors
+                _dlm_event(dataset, data, ds, tr[task], _subject, task, space, me_type)
+                print(
+                    f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
+                )
+
+        for task in tasks:
             # perform DLM analysis with physiological regressors for tasks with physio signals
             # the NSDimagery dataset does not have physiological signals, so we will skip DLM with physio analysis for NSD dataset
             if dataset == "nsd" and task == "nsdimagery":
                 print(
                     f"Skipping DLM with physiological regressors analysis for dataset {dataset}, subject {_subject}, task {task} since NSD dataset does not have physiological signals"
                 )
-            elif "dlm_physio" in _analysis and physio_labels is not None:
+            elif "dlm_physio" in _analysis:
+                data: DatasetLoad = ds.load_data(
+                    task=task, func_type=space, concatenate=False, me_type=me_type
+                )  # type: ignore
                 _dlm_physio(
                     dataset,
                     data,
@@ -200,21 +226,39 @@ def main(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
-    # only perform DLM analyses for tasks with event conditions
-    if any(a in _analysis for a in ["dlm_event"]):
+    # perform TE-curve DLM analyses for multi-echo data using run-wise partial fitting
+    if any(a in _analysis for a in ["dlm_event", "dlm_physio"]) and me_type == "echo":
         for task in tasks_event:
             print(
-                f"Loading data for dataset {dataset}, subject {_subject}, task {task} for DLM with event analyses"
+                f"Streaming multi-echo data for dataset {dataset}, subject {_subject}, task {task} for DLM analyses"
             )
-            data: DatasetLoad = ds.load_data(
-                task=task, func_type=space, concatenate=False, me_type=me_type
-            )  # type: ignore
-
             if "dlm_event" in _analysis:
-                # perform DLM analysis with event regressors
-                _dlm_event(dataset, data, ds, tr[task], _subject, task, space, me_type)
+                _dlm_event_multiecho(
+                    dataset,
+                    ds,
+                    tr[task],
+                    _subject,
+                    task,
+                )
                 print(
                     f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
+                )
+        for task in tasks:
+            if dataset == "nsd" and task == "nsdimagery":
+                print(
+                    f"Skipping DLM with physiological regressors analysis for dataset {dataset}, subject {_subject}, task {task} since NSD dataset does not have physiological signals"
+                )
+            elif "dlm_physio" in _analysis:
+                _dlm_physio_multiecho(
+                    dataset,
+                    ds,
+                    tr[task],
+                    physio_labels,
+                    _subject,
+                    task,
+                )
+                print(
+                    f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
 
@@ -300,6 +344,208 @@ def _dlm_event(
         )
 
 
+def _dlm_event_multiecho(
+    dataset: str,
+    ds: Dataset,
+    tr: float,
+    subject: str,
+    task: str,
+) -> None:
+    """
+    Perform Distributed Lag Model (DLM) analysis of TE-curves with event regressors
+    on the given data and save results to files. Only for multi-echo data in the EuskalIBUR dataset.
+
+    Parameters
+    ----------
+    ds : Dataset
+        Dataset object for handling data operations
+    tr: float
+        Repetition time (TR) of fMRI data
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    space : Literal["volume", "surface"]
+        Space to write output in (surface or volume)
+    """
+    print(
+        f"Performing TE-Curve DLM with event regressors on dataset euskalibur, subject {subject}, task {task}"
+    )
+    if task == "pinel":
+        conditions = PINEL_CONDITIONS
+    elif task == "simon":
+        conditions = SIMON_CONDITIONS
+    elif task == "motor":
+        conditions = MOTOR_CONDITIONS_EUSKALIBUR
+    else:
+        raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
+    if not isinstance(ds, DatasetEuskalibur):
+        raise ValueError(
+            "Multi-echo analyses are only supported for the EuskalIBUR dataset"
+        )
+
+    # estimate DLM with event regressors for multi-echo data using run-wise partial fits
+    dlm_event_echo = DistributedLagEventEchoModel(
+        echo_times_ms=ECHOS_EUSKALIBUR,
+        tr=tr,
+        knots_per_sec=0.3,
+        basis_type="cr",
+        regressor_duration=None,
+        regressor_extend=15.0,
+    )
+
+    sessions = ds.file_mapper.get_sessions_task(task)
+    for session in sessions:
+        session_data = ds.load_data(
+            task=task,
+            me_type="echo",
+            sessions=[session],
+            concatenate=False,
+            normalize=False,
+            load_confounds=True,
+            load_physio=False,
+        )
+        runs = ds.file_mapper.tasks_runs[task][session]
+        runs_session = runs if len(runs) > 0 else [None]
+        n_runs = min(
+            len(runs_session),
+            len(session_data["fmri"]),
+            len(session_data["confounds"]),
+            len(session_data["events"]),
+        )
+
+        for run_index in range(n_runs):
+            run = runs_session[run_index]
+            run_events = session_data["events"][run_index]
+            run_fmri = session_data["fmri"][run_index]
+            run_confounds = (
+                session_data["confounds"][run_index].filter(regex="cosine").to_numpy()
+            )
+            print(
+                f"  Partial fit event echo model on session {session}, run {run if run is not None else '01'}"
+            )
+            dlm_event_echo.fit_partial(
+                event_df=run_events,
+                data=run_fmri,
+                confounds=run_confounds,
+            )
+    dlm_event_echo.finalize_fit()
+
+    # loop through conditions and write predicted functional time courses to nifti files
+    for condition in conditions:
+        for echo_index in range(dlm_event_echo.E):
+            dlm_eval = dlm_event_echo.predict_curve_across_lags_for_echo(
+                trial=condition,
+                echo_index=echo_index,
+            )
+            pred_func_img = ds.to_img(dlm_eval.pred_effect, func_type="volume")
+            nib.save(  # type: ignore
+                pred_func_img,
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}.nii.gz",
+            )
+            # write dlm metadata (including betas, t-stats, etc.) to pickle file
+            pickle.dump(
+                dlm_eval,
+                open(
+                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}_metadata.pkl",
+                    "wb",
+                ),
+            )
+
+
+def _dlm_physio_multiecho(
+    dataset: str,
+    ds: Dataset,
+    tr: float,
+    physio_labels: list[str],
+    subject: str,
+    task: str,
+) -> None:
+    """
+    Perform Distributed Lag Model (DLM) analysis of TE-curves with physiological
+    regressors on the given data and save results to files.
+    """
+    print(
+        f"Performing TE-Curve DLM with physiological regressors on dataset {dataset}, subject {subject}, task {task}"
+    )
+    if not isinstance(ds, DatasetEuskalibur):
+        raise ValueError(
+            "Multi-echo analyses are only supported for the EuskalIBUR dataset"
+        )
+
+    dlm_physio_echo_models = {
+        physio_label: DistributedLagPhysioEchoModel(
+            echo_times_ms=ECHOS_EUSKALIBUR,
+            tr=tr,
+            neg_nlags=-15,
+            nlags=15,
+            n_knots=5,
+            basis_type="cr",
+            regressor_name=physio_label,
+        )
+        for physio_label in physio_labels
+    }
+
+    sessions = ds.file_mapper.get_sessions_task(task)
+    for session in sessions:
+        session_data = ds.load_data(
+            task=task,
+            me_type="echo",
+            sessions=[session],
+            concatenate=False,
+            normalize=False,
+            load_confounds=True,
+            load_physio=True,
+        )
+        runs = ds.file_mapper.tasks_runs[task][session]
+        runs_session = runs if len(runs) > 0 else [None]
+
+        for run_index in range(len(runs_session)):
+            run = runs_session[run_index]
+            run_physio = session_data["physio"][run_index]
+            run_fmri = session_data["fmri"][run_index]
+            run_confounds = (
+                session_data["confounds"][run_index].filter(regex="cosine").to_numpy()
+            )
+
+            for physio_label in physio_labels:
+                print(
+                    f"  Partial fit physio echo model for {physio_label} on session {session}, run {run if run is not None else '01'}"
+                )
+                physio_regressor = np.nan_to_num(
+                    np.asarray(
+                        zscore(run_physio[physio_label].to_numpy()), dtype=float
+                    ),
+                    nan=0.0,
+                ).reshape(-1, 1)
+                dlm_physio_echo_models[physio_label].fit_partial(
+                    regressors=physio_regressor,
+                    data=run_fmri,
+                    confounds=run_confounds,
+                )
+
+    for physio_label, dlm_physio_echo in dlm_physio_echo_models.items():
+        dlm_physio_echo.finalize_fit()
+
+        for echo_index in range(dlm_physio_echo.E):
+            dlm_eval = dlm_physio_echo.predict_curve_across_lags_for_echo(
+                regressor=physio_label,
+                echo_index=echo_index,
+            )
+            pred_func_img = ds.to_img(dlm_eval.pred_effect, func_type="volume")
+            nib.save(  # type: ignore
+                pred_func_img,
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}.nii.gz",
+            )
+            pickle.dump(
+                dlm_eval,
+                open(
+                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}_metadata.pkl",
+                    "wb",
+                ),
+            )
+
+
 def _dlm_physio(
     dataset: str,
     data: DatasetLoad,
@@ -352,8 +598,8 @@ def _dlm_physio(
             tr=tr, neg_nlags=-15, nlags=15, n_knots=5, basis_type="cr"
         )
         dlm = dlm.fit(
-            X=data["physio"][0][physio_label].to_numpy().reshape(-1, 1),
-            Y=data["fmri"][0],  # type: ignore
+            X=[run[physio_label].to_numpy().reshape(-1, 1) for run in data["physio"]],  # type: ignore
+            Y=data["fmri"],  # type: ignore[arg-type]
         )
         # estimate functional time courses at each voxel to lagged physio signal
         dlm_eval = dlm.evaluate()
@@ -486,10 +732,10 @@ if __name__ == "__main__":
         "-m",
         "--me_type",
         type=str,
-        choices=["optcomb", "t2", "s0"],
+        choices=["optcomb", "t2", "s0", "echo"],
         required=False,
         default="optcomb",
-        help="Type of multi-echo data to load (optcomb, t2, or s0). Only relevant for volume data in the EuskalIBUR dataset. Ignored for surface data and NSD dataset.",
+        help="Type of multi-echo data to load (optcomb, t2, s0, or echo). Only relevant for volume data in the EuskalIBUR dataset. Ignored for surface data and NSD dataset.",
     )
     # parse arguments
     args = parser.parse_args()
