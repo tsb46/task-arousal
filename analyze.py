@@ -449,6 +449,14 @@ def _dlm_event_multiecho(
             )
     dlm_event_echo.finalize_fit()
 
+    # save dlm fit object to pickle file
+    pickle.dump(
+        dlm_event_echo,
+        open(
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_echo_fit.pkl",
+            "wb",
+        ),
+    )
     # loop through conditions and write predicted functional time courses to nifti files
     for condition in conditions:
         for echo_index in range(dlm_event_echo.E):
@@ -544,6 +552,15 @@ def _dlm_physio_multiecho(
 
     for physio_label, dlm_physio_echo in dlm_physio_echo_models.items():
         dlm_physio_echo.finalize_fit()
+
+        # save dlm fit object to pickle file
+        pickle.dump(
+            dlm_physio_echo,
+            open(
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo_fit.pkl",
+                "wb",
+            ),
+        )
 
         for echo_index in range(dlm_physio_echo.E):
             dlm_eval = dlm_physio_echo.predict_curve_across_lags_for_echo(
