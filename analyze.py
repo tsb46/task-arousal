@@ -391,10 +391,15 @@ def _dlm_event_multiecho(
     )
     if task == "pinel":
         conditions = PINEL_CONDITIONS
+        event_duration = None
     elif task == "simon":
         conditions = SIMON_CONDITIONS
+        # for the Simon task, events are of varying duration which can't be handled with the current run-wise partial fit approach to fitting the DLM echo model,
+        # so we will set a fixed event duration that is long enough to capture the longest events in the Simon task
+        event_duration = 3.0
     elif task == "motor":
         conditions = MOTOR_CONDITIONS_EUSKALIBUR
+        event_duration = None
     else:
         raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
     if not isinstance(ds, DatasetEuskalibur):
@@ -408,7 +413,7 @@ def _dlm_event_multiecho(
         tr=tr,
         knots_per_sec=0.3,
         basis_type="cr",
-        event_duration=None,
+        event_duration=event_duration,
         regressor_extend=15.0,
     )
 
