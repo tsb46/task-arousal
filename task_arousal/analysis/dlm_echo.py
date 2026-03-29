@@ -73,6 +73,42 @@ class DistributedLagPhysioEchoModel(_DistributedLagEchoBase):
         echo_smooth_alpha: float = 1.0,
         nuisance_ridge_alpha: float = 0.0,
     ):
+        """
+        Parameters
+        ----------
+        echo_times_ms
+            Echo times in milliseconds.
+        tr
+            Repetition time in seconds.
+        nlags
+            number of lags (shifts) of the physio signal in the forward direction
+        neg_nlags
+            number of lags (shifts) of the physio signal in the negative direction.
+            Must be a negative integer. This allows modeling the association between
+            functional and physio signals where the functional leads the physio signal.
+        knots_per_sec
+            number of knots per second in the spline basis across temporal lags. This ensures
+            that varying duration trials have similar temporal smoothness in the basis. For example,
+            a value of 0.5 results in one knot every 2 seconds. Default is 0.3 knots per second.
+        n_knots
+            fix the number of knots in the spline basis across temporal lags. If this parameter is set,
+            the knots_per_sec parameter is ignored. Default is None.
+        knots
+            knot locations for the spline basis across temporal lags. If supplied, this
+            overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
+            n_knots parameter are ignored.
+        basis_type
+            basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
+        regressor_name
+            Name of the regressor to use in prediction metadata.
+        ridge_alpha
+            Regularization parameter for ridge regression.
+        echo_smooth_alpha
+            Smoothing parameter for echo times.
+        nuisance_ridge_alpha
+            Regularization parameter for nuisance regressors.
+
+        """
         super().__init__(
             echo_times_ms=echo_times_ms,
             ridge_alpha=ridge_alpha,
@@ -512,13 +548,52 @@ class DistributedLagEventEchoModel(_DistributedLagEchoBase):
         n_knots: int | None = None,
         knots: list[int] | None = None,
         basis_type: Literal["cr", "bs"] = "cr",
-        regressor_duration: float | None = None,
+        event_duration: float | None = None,
         resample_tr: float = RESAMPLE_TR,
         slice_timing_ref: float = SLICE_TIMING_REF,
         ridge_alpha: float = 1.0,
         echo_smooth_alpha: float = 1.0,
         nuisance_ridge_alpha: float = 0.0,
     ):
+        """
+        Parameters
+        ----------
+        echo_times_ms
+            Echo times in milliseconds.
+        tr
+            Repetition time of the fMRI data in seconds.
+        regressor_extend
+            how much time (in seconds) after the end of the event to extend the regressor. If None, the regressor
+            will only cover the duration of the event. Defaults is 15 seconds. If regressor_duration is set, this parameter is ignored.
+        knots_per_sec
+            number of knots per second in the spline basis across temporal lags. This ensures
+            that varying duration trials have similar temporal smoothness in the basis. For example,
+            a value of 0.5 results in one knot every 2 seconds. Default is 0.5 knots per second.
+        n_knots
+            fix the number of knots in the spline basis across temporal lags. If this parameter is set,
+            the knots_per_sec parameter is ignored. Default is None.
+        knots
+            knot locations for the spline basis across temporal lags. If supplied, this
+            overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
+            n_knots parameter are ignored.
+        basis_type
+            basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
+        event_duration
+            fix the duration of all events - i.e. the duration after onset of the event.
+            If set to None, the event duration will be set to the event duration from the event data.
+            Note, that if event_duration is not fixed for varying stimulus durations, the number of lags (nlags)
+            will vary across events.
+        resample_tr
+            Temporal resolution in seconds to use when resampling event regressors for projection; should be a divisor of tr for best results.
+        slice_timing_ref
+            Reference time in seconds for slice timing when constructing event regressors; should be between 0 and tr.
+        ridge_alpha
+            Regularization strength for ridge regression when fitting the model; higher values correspond to stronger regularization.
+        echo_smooth_alpha
+            Regularization strength for smoothing across echoes when fitting the model; higher values correspond to stronger smoothing.
+        nuisance_ridge_alpha
+            Regularization strength for ridge regression on nuisance regressors when fitting the model; higher values correspond to stronger regularization.
+        """
         super().__init__(
             echo_times_ms=echo_times_ms,
             ridge_alpha=ridge_alpha,
@@ -529,8 +604,8 @@ class DistributedLagEventEchoModel(_DistributedLagEchoBase):
             raise ValueError("tr must be positive")
         if regressor_extend < 0:
             raise ValueError("regressor_extend must be non-negative")
-        if regressor_duration is not None and regressor_duration <= 0:
-            raise ValueError("regressor_duration must be positive when provided")
+        if event_duration is not None and event_duration <= 0:
+            raise ValueError("event_duration must be positive when provided")
         if resample_tr <= 0:
             raise ValueError("resample_tr must be positive")
 
@@ -540,7 +615,7 @@ class DistributedLagEventEchoModel(_DistributedLagEchoBase):
         self.n_knots = n_knots
         self.knots = knots
         self.basis_type: Literal["cr", "bs"] = basis_type
-        self.regressor_duration = regressor_duration
+        self.event_duration = event_duration
         self.resample_tr = float(resample_tr)
         self.slice_timing_ref = float(slice_timing_ref)
 
@@ -661,19 +736,22 @@ class DistributedLagEventEchoModel(_DistributedLagEchoBase):
                 "fit_partial encountered trial types that were not present when the event basis was initialized: "
                 f"{sorted(unexpected_trials)}"
             )
-        if self.regressor_duration is not None:
-            return
         for trial in self._partial_trial_types:
             trial_durations = event_df.loc[
                 event_df["trial_type"] == trial, "duration"
             ].to_numpy()
             if trial_durations.size == 0:
                 continue
-            required_lag_max = float(np.max(trial_durations) + self.regressor_extend)
+            if self.event_duration is not None:
+                required_lag_max = self.event_duration + self.regressor_extend
+            else:
+                required_lag_max = float(
+                    np.max(trial_durations) + self.regressor_extend
+                )
             if required_lag_max > self._partial_trial_lag_max[trial] + 1e-9:
                 raise ValueError(
                     "fit_partial encountered a longer event duration than the initialized basis supports. "
-                    "Use fit() across all runs or set regressor_duration to a fixed value."
+                    "Use fit() across all runs or set event_duration to a fixed value."
                 )
 
     def _fit_projected_run(
@@ -865,7 +943,7 @@ class DistributedLagEventEchoModel(_DistributedLagEchoBase):
             basis_type=self.basis_type,
             knots=self.knots,
             regressor_extend=self.regressor_extend,
-            regressor_duration=self.regressor_duration,
+            event_duration=self.event_duration,
         )
 
         confounds_list = [None] * len(data) if confounds is None else list(confounds)
@@ -917,7 +995,7 @@ class DistributedLagEventEchoModel(_DistributedLagEchoBase):
                     basis_type=self.basis_type,
                     knots=self.knots,
                     regressor_extend=self.regressor_extend,
-                    regressor_duration=self.regressor_duration,
+                    event_duration=self.event_duration,
                 )
             )
             run_design_array = np.asarray(event_regs[0], dtype=float)

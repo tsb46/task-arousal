@@ -312,10 +312,11 @@ class DistributedLagEventModel:
         n_knots parameter are ignored.
     basis_type: Literal['cr','bs']
         basis type for the spline basis. 'cr' for natural spline, 'bs' for B-spline.
-    regressor_duration: float | None
-        fix the duration of all spline regressors - i.e. the duration after onset of the event.
-        If set to None, the regressor duration will be set to the event duration from the event data.
-        Note, that if regressor_duration is None, the number of lags (nlags) will vary across events.
+    event_duration: float | None
+        fix the duration of all events - i.e. the duration after onset of the event.
+        If set to None, the event duration will be set to the event duration from the event data.
+        Note, that if event_duration is not fixed for varying stimulus durations, the number of lags (nlags)
+        will vary across events.
     event_regs
         Event design matrices are normalized column-wise within each run during
         regressor construction. This means model coefficients and predictions are
@@ -332,7 +333,7 @@ class DistributedLagEventModel:
         n_knots: int | None = None,
         knots: List[int] | None = None,
         basis_type: Literal["cr", "bs"] = "cr",
-        regressor_duration: float | None = None,
+        event_duration: float | None = None,
     ):
         self.tr = tr
         self.regressor_extend = regressor_extend
@@ -340,7 +341,7 @@ class DistributedLagEventModel:
         self.n_knots = n_knots
         self.knots = knots
         self.basis_type = basis_type
-        self.regressor_duration = regressor_duration
+        self.event_duration = event_duration
 
     def fit(self, event_dfs: List[pd.DataFrame], outcome_data: List[np.ndarray]):
         """
@@ -392,7 +393,7 @@ class DistributedLagEventModel:
             n_knots=self.n_knots,
             knots=self.knots,
             basis_type=self.basis_type,  # type: ignore
-            regressor_duration=self.regressor_duration,
+            event_duration=self.event_duration,
             regressor_extend=self.regressor_extend,
         )
 

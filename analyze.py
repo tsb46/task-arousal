@@ -408,7 +408,7 @@ def _dlm_event_multiecho(
         tr=tr,
         knots_per_sec=0.3,
         basis_type="cr",
-        regressor_duration=None,
+        event_duration=None,
         regressor_extend=15.0,
     )
 

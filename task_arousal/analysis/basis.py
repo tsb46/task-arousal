@@ -161,7 +161,7 @@ def create_spline_event_reg(
     basis_type: Literal["cr", "bs"] = "cr",
     knots: List[int] | None = None,
     regressor_extend: float = 15.0,
-    regressor_duration: float | None = None,
+    event_duration: float | None = None,
     normalize_regressors: bool = True,
 ) -> Tuple[
     List[np.ndarray],
@@ -204,12 +204,12 @@ def create_spline_event_reg(
         overrides the n_knots parameter. If this parameter is set, the knots_per_sec parameter and
         n_knots parameter are ignored.
     regressor_extend: float
-        how much time (in seconds) after the end of the event to extend the regressor. If None, the regressor
-        will only cover the duration of the event. Defaults is 10 seconds. If regressor_duration is set, this parameter is ignored.
-    regressor_duration: float | None
-        fix the duration of all spline regressors - i.e. the duration after onset of the event.
-        If set to None, the regressor duration will be set to the event duration from the event data.
-        Note, that if regressor_duration is None, the number of lags (nlags) will vary across events.
+        how much time (in seconds) after the end of the event to extend the regressor. Defaults is 15 seconds.
+    event_duration: float | None
+        fix the duration of all events - i.e. the duration after onset of the event.
+        If set to None, the event duration will be set to the event duration from the event data.
+        Note, that if event_duration is not fixed for varying stimulus durations, the number of lags (nlags)
+        will vary across events.
     normalize_regressors: bool
         If True, z-score each run's event design matrix column-wise before appending it
         to the returned list. Zero-variance columns are left at zero. Defaults to True.
@@ -235,10 +235,10 @@ def create_spline_event_reg(
                     max_duration = trial_max
         trial_durations_dict[trial] = max_duration
         # extend regressor duration by regressor_extend
-        if regressor_duration is None:
+        if event_duration is None:
             trial_durations_extend_dict[trial] = max_duration + regressor_extend
         else:
-            trial_durations_extend_dict[trial] = regressor_duration
+            trial_durations_extend_dict[trial] = event_duration + regressor_extend
         # calculate number of lags based on regressor duration and TR
         nlags[trial] = int(np.ceil(trial_durations_extend_dict[trial] / resample_tr))
         # create spline basis
