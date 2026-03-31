@@ -475,6 +475,10 @@ def _dlm_event_multiecho(
     dlm_event_echo.finalize_fit()
 
     # loop through conditions and write predicted functional time courses to nifti files
+    if me_type == "mono_exp":
+        suffix = "_monoexp"
+    else:
+        suffix = ""
     for condition in conditions:
         for echo_index in range(dlm_event_echo.E):
             dlm_eval = dlm_event_echo.predict_curve_across_lags_for_echo(
@@ -484,13 +488,13 @@ def _dlm_event_multiecho(
             pred_func_img = ds.to_img(dlm_eval.pred_curve, func_type="volume")
             nib.save(  # type: ignore
                 pred_func_img,
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}.nii.gz",
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}{suffix}.nii.gz",
             )
             # write dlm metadata (including betas, t-stats, etc.) to pickle file
             pickle.dump(
                 dlm_eval,
                 open(
-                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}_metadata.pkl",
+                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}{suffix}_metadata.pkl",
                     "wb",
                 ),
             )
