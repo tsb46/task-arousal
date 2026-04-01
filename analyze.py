@@ -635,6 +635,10 @@ def _dlm_physio_multiecho(
                     confounds=run_confounds,
                 )
 
+    if me_type == "mono_exp":
+        suffix = "_monoexp"
+    else:
+        suffix = ""
     for physio_label, dlm_physio_echo in dlm_physio_echo_models.items():
         dlm_physio_echo.finalize_fit()
 
@@ -646,12 +650,12 @@ def _dlm_physio_multiecho(
             pred_func_img = ds.to_img(dlm_eval.pred_curve, func_type="volume")
             nib.save(  # type: ignore
                 pred_func_img,
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}.nii.gz",
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}{suffix}.nii.gz",
             )
             pickle.dump(
                 dlm_eval,
                 open(
-                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}_metadata.pkl",
+                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}{suffix}_metadata.pkl",
                     "wb",
                 ),
             )
