@@ -485,7 +485,13 @@ def _dlm_event_multiecho(
                 trial=condition,
                 echo_index=echo_index,
             )
-            pred_func_img = ds.to_img(dlm_eval.pred_curve, func_type="volume")
+            if me_type == "mono_exp":
+                effect = dlm_eval.pred_log_effect  # type: ignore
+            elif me_type == "echo":
+                # compute a normalized effect by dividing by runwise intercept
+                effect = dlm_eval.pred_effect / dlm_eval.pred_nuisance  # type: ignore
+
+            pred_func_img = ds.to_img(effect, func_type="volume")
             nib.save(  # type: ignore
                 pred_func_img,
                 f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}{suffix}.nii.gz",
@@ -647,7 +653,13 @@ def _dlm_physio_multiecho(
                 regressor=physio_label,
                 echo_index=echo_index,
             )
-            pred_func_img = ds.to_img(dlm_eval.pred_curve, func_type="volume")
+            if me_type == "mono_exp":
+                effect = dlm_eval.pred_log_effect  # type: ignore
+            elif me_type == "echo":
+                # compute a normalized effect by dividing by runwise intercept
+                effect = dlm_eval.pred_effect / dlm_eval.pred_nuisance  # type: ignore
+
+            pred_func_img = ds.to_img(effect, func_type="volume")
             nib.save(  # type: ignore
                 pred_func_img,
                 f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}{suffix}.nii.gz",
