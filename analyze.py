@@ -510,6 +510,7 @@ def _dlm_event_multiecho(
                 dlm_event_echo, DistributedLagEventMonoexponentialEchoModel
             )  # type guard for linter
             param_eval = dlm_event_echo.predict_loglinear_params_across_lags(
+                include_intercept=False,
                 trial=condition,
             )
             intercept_img = ds.to_img(
@@ -678,6 +679,7 @@ def _dlm_physio_multiecho(
             )  # type guard for linter
             param_eval = dlm_physio_echo.predict_loglinear_params_across_lags(
                 regressor=physio_label,
+                include_intercept=False,
             )
             intercept_img = ds.to_img(
                 param_eval.pred_params[:, 0, :], func_type="volume"
