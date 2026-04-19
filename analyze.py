@@ -488,8 +488,7 @@ def _dlm_event_multiecho(
             if me_type == "mono_exp":
                 effect = dlm_eval.pred_log_effect  # type: ignore
             elif me_type == "echo":
-                # compute a normalized effect by dividing by runwise intercept
-                effect = dlm_eval.pred_effect / dlm_eval.pred_nuisance  # type: ignore
+                effect = dlm_eval.pred_effect  # type: ignore
 
             pred_func_img = ds.to_img(effect, func_type="volume")
             nib.save(  # type: ignore
@@ -657,8 +656,7 @@ def _dlm_physio_multiecho(
             if me_type == "mono_exp":
                 effect = dlm_eval.pred_log_effect  # type: ignore
             elif me_type == "echo":
-                # compute a normalized effect by dividing by runwise intercept
-                effect = dlm_eval.pred_effect / dlm_eval.pred_nuisance  # type: ignore
+                effect = dlm_eval.pred_effect  # type: ignore
 
             pred_func_img = ds.to_img(effect, func_type="volume")
             nib.save(  # type: ignore
