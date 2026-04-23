@@ -520,6 +520,11 @@ class FileMapperBids:
         """
         Get the echo files for a specific session and task. Only for multi-echo datasets.
 
+        Note, the echo files will be returned in order of echo time (TE) based on the echo times specified in
+        the ECHOS_EUSKALIBUR constant and the assumption that the echo labels in the BIDS files (e.g. 'echo-1', 'echo-2', etc.)
+        correspond to the order of echo times in ECHOS_EUSKALIBUR. It is important that the echo times are in increasing order and
+        that the BIDS files are labeled correctly for this function to work properly.
+
         Parameters
         ----------
         session : str

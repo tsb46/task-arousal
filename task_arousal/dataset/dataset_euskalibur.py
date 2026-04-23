@@ -91,6 +91,7 @@ class DatasetEuskalibur:
         concatenate: bool = False,
         normalize: bool = True,
         fmri_normalize_method: Literal["zscore", "percent_change"] = "zscore",
+        echo_n: int | None = None,
         load_func: bool = True,
         load_physio: bool = True,
         load_confounds: bool = False,
@@ -121,6 +122,9 @@ class DatasetEuskalibur:
             for fMRI normalization options. Default is True.
         fmri_normalize_method : {'zscore', 'percent_change'}
             The method to use for fMRI normalization. Default is 'zscore'.
+        echo_n : int, optional
+            If me_type is 'echo', specify which echo to load (0,1,2,3,4). If None, all echoes will be loaded and returned
+            as a tensor of shape (n_voxels, n_echos, n_timepoints). Default is None.
         load_func : bool, optional
             Whether to load fMRI data. Default is True.
         load_physio : bool, optional
@@ -154,6 +158,16 @@ class DatasetEuskalibur:
                     "Concatenation across sessions is not performed for me_type 'echo', it is performed in the analysis stage, ignoring concatenation."
                 )
             concatenate = False
+        # if echo_n is specified, ensure me_type is 'echo'
+        if echo_n is not None and me_type != "echo":
+            raise ValueError(
+                f"echo_n is only applicable when me_type is 'echo'. Current me_type is '{me_type}'."
+            )
+        # if echo_n is specified, ensure it's a valid echo number
+        if echo_n is not None and (echo_n < 0 or echo_n >= len(ECHOS_EUSKALIBUR)):
+            raise ValueError(
+                f"Invalid echo_n: {echo_n}. Valid echo numbers are between 0 and {len(ECHOS_EUSKALIBUR) - 1}."
+            )
 
         # select conditions and runs based on task
         if task == "pinel":
@@ -318,6 +332,7 @@ class DatasetEuskalibur:
                             run=run,
                             normalize=normalize,
                             fmri_normalize_method=fmri_normalize_method,
+                            echo_n=echo_n,
                             verbose=verbose,
                         )
 
@@ -499,6 +514,7 @@ class DatasetEuskalibur:
         run: str | None = None,
         normalize: bool = False,
         fmri_normalize_method: Literal["zscore", "percent_change"] = "zscore",
+        echo_n: int | None = None,
         verbose: bool = True,
     ) -> np.ndarray:
         """
@@ -507,6 +523,8 @@ class DatasetEuskalibur:
 
         The dataset returns the run-specific echo file as a tensor of shape (n_voxels, n_echos, n_timepoints),
         where the echo dimension is ordered by echo time (TE).
+
+        If echo_n is specified, only the echo corresponding to that echo number will be loaded and returned as a 2D array of shape (n_timepoints, n_voxels).
         """
         fmri_files = self.file_mapper.get_session_echo_files(
             session, task, run=run, desc="preprocfinal"
@@ -516,9 +534,9 @@ class DatasetEuskalibur:
             raise ValueError(
                 f"Number of echo files found ({len(fmri_files)}) does not match expected number of echoes ({len(ECHOS_EUSKALIBUR)}) for session '{session}', task '{task}', run '{run if run is not None else ''}'."
             )
-        # load each echo file and stack into a tensor
-        echo_data_list = []
-        for echo_file in fmri_files:
+        # if echo_n is specified, get the specific echo file corresponding to that echo number and load it
+        if echo_n is not None:
+            echo_file = fmri_files[echo_n]
             echo_data = _load_fmri(
                 echo_file,
                 func_type="volume",
@@ -527,10 +545,23 @@ class DatasetEuskalibur:
                 normalize_method=fmri_normalize_method,
                 verbose=verbose,
             )
-            echo_data_list.append(echo_data.T)  # transpose to time x voxels
-        # stack echo data into a tensor of shape (n_voxels, n_echos, n_timepoints)
-        echo_data_tensor = np.stack(echo_data_list, axis=1)
-        return echo_data_tensor
+            return echo_data
+        else:
+            # load each echo file and stack into a tensor
+            echo_data_list = []
+            for echo_file in fmri_files:
+                echo_data = _load_fmri(
+                    echo_file,
+                    func_type="volume",
+                    mask_img=self.mask,  # type: ignore
+                    normalize=normalize,
+                    normalize_method=fmri_normalize_method,
+                    verbose=verbose,
+                )
+                echo_data_list.append(echo_data.T)  # transpose to time x voxels
+            # stack echo data into a tensor of shape (n_voxels, n_echos, n_timepoints)
+            echo_data_tensor = np.stack(echo_data_list, axis=1)
+            return echo_data_tensor
 
     def to_img(
         self,

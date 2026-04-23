@@ -60,7 +60,7 @@ def load_fmri(
     bandpass: tuple[float, float] | None = None,
     tr: float | None = None,
     verbose: bool = False,
-):
+) -> np.ndarray:
     """
     Load fMRI data from NIfTI or CIFTI file, optionally masking to 2D (time x voxels/vertices)
     with per-voxel/vertex z-scoring.
@@ -69,7 +69,7 @@ def load_fmri(
     ----------
     fp : str
         NIfTI file path.
-    mask_img : nib.nifti1.Nifti1Image
+    mask_img : nib.nifti1.Nifti1Image | None
         Brain mask in the same space as fp.
     normalize : bool
         Whether to normalize the data along the time dimension. Default is False (no normalization).
@@ -115,14 +115,15 @@ def load_fmri(
     if normalize:
         if normalize_method == "zscore":
             data_2d = zscore(data_2d, axis=0)
+            # for type checker, zscore can return either a numpy array or a masked array depending on the presence of NaNs, but we will handle NaNs later
+            # so we want to ensure it's a numpy array here
+            data_2d = np.array(data_2d)
         elif normalize_method == "percent_change":
             mean_signal = np.mean(data_2d, axis=-1, keepdims=True)
             data_2d = (data_2d - mean_signal) / mean_signal
 
     # check for NaNs after normalization, which can occur if a voxel has zero variance (zscore) or zero mean signal (percent change)
     if normalize:
-        # convert to numpy array for NaN checking
-        data_2d = np.array(data_2d)
         # calculate if any NaNs are present after normalization
         voxels_nan = np.isnan(data_2d).any(axis=0)
         if voxels_nan.any():
