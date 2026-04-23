@@ -147,13 +147,6 @@ class DatasetEuskalibur:
             raise ValueError(
                 f"Invalid me_type: {me_type}. Allowed values are 'optcomb', 't2', 's0', and 'echo'."
             )
-        # normalization would destroy the relationship between echos for me_type 'echo', so if me_type is 'echo', ignore normalization
-        if me_type == "echo" and normalize:
-            if verbose:
-                print(
-                    "Normalization would destroy the relationship between echos for me_type 'echo', ignoring normalization."
-                )
-            normalize = False
         # concatenation across sessions is not performed for me_type 'echo', it is performed in the analysis stage
         if me_type == "echo" and concatenate:
             if verbose:
