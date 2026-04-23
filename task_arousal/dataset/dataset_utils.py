@@ -56,6 +56,7 @@ def load_fmri(
     func_type: Literal["volume", "surface"] = "volume",
     mask_img: nib.nifti1.Nifti1Image | None = None,
     normalize: bool = False,
+    normalize_method: Literal["zscore", "percent_change"] = "zscore",
     bandpass: tuple[float, float] | None = None,
     tr: float | None = None,
     verbose: bool = False,
@@ -71,7 +72,9 @@ def load_fmri(
     mask_img : nib.nifti1.Nifti1Image
         Brain mask in the same space as fp.
     normalize : bool
-        If True, z-score each voxel across time (axis=0 after masking).
+        Whether to normalize the data along the time dimension. Default is False (no normalization).
+    normalize_method : Literal['zscore', 'percent_change']
+        The method to use for normalization if normalize is True. Default is 'zscore'.
     bandpass : tuple of float | None
         If provided, apply a Butterworth bandpass filter with these (low, high) frequencies in Hz.
     tr : float | None
@@ -110,10 +113,17 @@ def load_fmri(
         )
 
     if normalize:
-        data_2d = zscore(data_2d, axis=0)
+        if normalize_method == "zscore":
+            data_2d = zscore(data_2d, axis=0)
+        elif normalize_method == "percent_change":
+            mean_signal = np.mean(data_2d, axis=-1, keepdims=True)
+            data_2d = (data_2d - mean_signal) / mean_signal
+
+    # check for NaNs after normalization, which can occur if a voxel has zero variance (zscore) or zero mean signal (percent change)
+    if normalize:
         # convert to numpy array for NaN checking
         data_2d = np.array(data_2d)
-        # calculate if any NaNs are present after z-scoring
+        # calculate if any NaNs are present after normalization
         voxels_nan = np.isnan(data_2d).any(axis=0)
         if voxels_nan.any():
             # calculate number of voxels with NaNs
@@ -121,7 +131,7 @@ def load_fmri(
             # print warning
             if verbose:
                 print(
-                    f"Warning: {n_voxels_nan} voxels have NaN values after z-scoring for file: {fp}"
+                    f"Warning: {n_voxels_nan} voxels have NaN values after normalization for file: {fp}"
                 )
             # replace NaNs with zeros
             data_2d[:, voxels_nan] = 0.0

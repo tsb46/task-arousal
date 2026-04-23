@@ -90,6 +90,7 @@ class DatasetEuskalibur:
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
+        fmri_normalize_method: Literal["zscore", "percent_change"] = "zscore",
         load_func: bool = True,
         load_physio: bool = True,
         load_confounds: bool = False,
@@ -115,8 +116,11 @@ class DatasetEuskalibur:
             Note, that event data will not be concatenated to preserve trial timing
             across runs. Default is False.
         normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension.
-            Default is True.
+            Whether to normalize the data along the time dimension. Z-score normalization
+            is the only option for physiological and confound data. See choices for fmri_normalize_method
+            for fMRI normalization options. Default is True.
+        fmri_normalize_method : {'zscore', 'percent_change'}
+            The method to use for fMRI normalization. Default is 'zscore'.
         load_func : bool, optional
             Whether to load fMRI data. Default is True.
         load_physio : bool, optional
@@ -310,6 +314,7 @@ class DatasetEuskalibur:
                             fmri_files[0],
                             func_type=func_type,
                             normalize=normalize,
+                            fmri_normalize_method=fmri_normalize_method,
                             verbose=verbose,
                         )
                     # load separately preprocessed echo files if me_type is "echo"
@@ -319,6 +324,7 @@ class DatasetEuskalibur:
                             task=task,
                             run=run,
                             normalize=normalize,
+                            fmri_normalize_method=fmri_normalize_method,
                             verbose=verbose,
                         )
 
@@ -477,6 +483,7 @@ class DatasetEuskalibur:
         fp: str,
         func_type: Literal["volume", "surface"] = "volume",
         normalize: bool = False,
+        fmri_normalize_method: Literal["zscore", "percent_change"] = "zscore",
         verbose: bool = True,
     ) -> np.ndarray:
         """
@@ -488,6 +495,7 @@ class DatasetEuskalibur:
             func_type=func_type,
             mask_img=self.mask,  # type: ignore
             normalize=normalize,
+            normalize_method=fmri_normalize_method,
             verbose=verbose,
         )
 
@@ -497,6 +505,7 @@ class DatasetEuskalibur:
         task: str,
         run: str | None = None,
         normalize: bool = False,
+        fmri_normalize_method: Literal["zscore", "percent_change"] = "zscore",
         verbose: bool = True,
     ) -> np.ndarray:
         """
@@ -522,6 +531,7 @@ class DatasetEuskalibur:
                 func_type="volume",
                 mask_img=self.mask,  # type: ignore
                 normalize=normalize,
+                normalize_method=fmri_normalize_method,
                 verbose=verbose,
             )
             echo_data_list.append(echo_data.T)  # transpose to time x voxels

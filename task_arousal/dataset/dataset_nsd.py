@@ -53,6 +53,7 @@ class DatasetNsd:
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
+        fmri_normalize_method: Literal["zscore", "percent_change"] = "zscore",
         bandpass: tuple[float, float] | None = None,
         load_func: bool = True,
         load_physio: bool = True,
@@ -78,8 +79,11 @@ class DatasetNsd:
             Note, that event data will not be concatenated to preserve trial timing
             across runs. Default is False.
         normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension.
-            Default is True.
+            Whether to normalize the data along the time dimension. Z-score normalization
+            is the only option for physiological and confound data. See choices for fmri_normalize_method
+            for fMRI normalization options. Default is True.
+        fmri_normalize_method : {'zscore', 'percent_change'}
+            The method to use for fMRI normalization. Default is 'zscore'.
         bandpass : tuple of float | None, optional
             If provided, apply a Butterworth bandpass filter with these (low, high) frequencies in Hz.
             Default is None.
@@ -224,6 +228,7 @@ class DatasetNsd:
                     fmri_files[0],
                     tr=tr,
                     normalize=normalize,
+                    fmri_normalize_method=fmri_normalize_method,
                     bandpass=bandpass,
                     verbose=verbose,
                 )
@@ -350,6 +355,7 @@ class DatasetNsd:
         fp: str,
         tr: float,
         normalize: bool = False,
+        fmri_normalize_method: Literal["zscore", "percent_change"] = "zscore",
         bandpass: tuple[float, float] | None = None,
         verbose: bool = True,
     ) -> np.ndarray:
@@ -361,6 +367,7 @@ class DatasetNsd:
             fp,
             mask_img=self.mask,  # type: ignore
             normalize=normalize,
+            normalize_method=fmri_normalize_method,
             bandpass=bandpass,
             tr=tr,
             verbose=verbose,
