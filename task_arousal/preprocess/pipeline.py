@@ -293,10 +293,10 @@ class PreprocessingPipeline:
                 elif me_type == "echo":
                     # for the individual echo files, we apply a more minimal preprocessing pipeline that only includes transformation to standard space, since
                     # these steps are typically applied after combining the echoes rather than to the individual echo files.
-                    highpass_filter = False
-                    detrend = False
+                    highpass_filter = True
+                    detrend = True
                     spatial_smooth = False
-                    standardize = False
+                    standardize = True
                     to_std = True
                 else:
                     raise ValueError(f"Unknown multi-echo type: {me_type}")
