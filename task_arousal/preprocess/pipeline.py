@@ -296,7 +296,7 @@ class PreprocessingPipeline:
                     highpass_filter = True
                     detrend = True
                     spatial_smooth = False
-                    standardize = True
+                    standardize = False
                     to_std = True
                 else:
                     raise ValueError(f"Unknown multi-echo type: {me_type}")
