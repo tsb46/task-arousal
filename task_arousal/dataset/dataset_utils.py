@@ -119,7 +119,7 @@ def load_fmri(
             # so we want to ensure it's a numpy array here
             data_2d = np.array(data_2d)
         elif normalize_method == "percent_change":
-            mean_signal = np.mean(data_2d, axis=-1, keepdims=True)
+            mean_signal = np.mean(data_2d, axis=0, keepdims=True)
             data_2d = (data_2d - mean_signal) / mean_signal
 
     # check for NaNs after normalization, which can occur if a voxel has zero variance (zscore) or zero mean signal (percent change)
