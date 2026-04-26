@@ -8,6 +8,7 @@ import pickle
 
 from typing import Literal
 
+from bidsschematools import data
 import nibabel as nib
 import numpy as np
 from scipy.stats import zscore
@@ -291,15 +292,13 @@ def main(
                 f"Streaming multi-echo data for dataset {dataset}, subject {_subject}, task {task} for DLM analyses"
             )
             if "dlm_event" in _analysis:
-                _dlm_event_multiecho_mono_exp(dataset, ds, tr[task], _subject, task)
+                _dlm_event_echo(dataset, ds, tr[task], _subject, task)
                 print(
                     f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
         for task in tasks:
             if "dlm_physio" in _analysis:
-                _dlm_physio_multiecho_mono_exp(
-                    dataset, ds, tr[task], physio_labels, _subject, task
-                )
+                _dlm_physio_echo(dataset, ds, tr[task], physio_labels, _subject, task)
                 print(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
@@ -385,6 +384,83 @@ def _dlm_event(
                 "wb",
             ),
         )
+
+
+def _dlm_event_echo(
+    dataset: str,
+    ds: Dataset,
+    tr: float,
+    subject: str,
+    task: str,
+) -> None:
+    """
+    Perform Distributed Lag Model (DLM) analysis with event regressors
+    on each echo individually.
+
+    Parameters
+    ----------
+    dataset : str
+        Dataset type ('euskalibur')
+    ds : Dataset
+        Dataset object for handling data operations
+    tr: float
+        Repetition time (TR) of fMRI data
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    """
+    print(
+        f"Performing DLM with event regressors on dataset {dataset}, subject {subject}, task {task}"
+    )
+    if task == "pinel":
+        conditions = PINEL_CONDITIONS
+    elif task == "simon":
+        conditions = SIMON_CONDITIONS
+    elif task == "motor":
+        conditions = MOTOR_CONDITIONS_EUSKALIBUR
+    else:
+        raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
+
+    if not isinstance(ds, DatasetEuskalibur):
+        raise ValueError(
+            "Multi-echo analyses are only supported for the EuskalIBUR dataset"
+        )
+
+    # loop through individual echoes and perform DLM analysis for each echo separately
+    for echo_index in range(len(ECHOS_EUSKALIBUR)):
+        # load echo data given index
+        data = ds.load_data(
+            task=task,
+            me_type="echo",
+            concatenate=False,
+            normalize=True,
+            fmri_normalize_method="percent_change",
+            load_physio=False,
+            echo_n=echo_index,
+        )
+        # estimate DLM with event regressors with default parameters
+        dlm = DistributedLagEventModel(tr=tr)
+        dlm = dlm.fit(
+            event_dfs=data["events"],
+            outcome_data=data["fmri"],
+        )
+        # loop through conditions and write predicted functional time courses to nifti files
+        for condition in conditions:
+            dlm_eval = dlm.evaluate(trial=condition)
+            pred_func_img = ds.to_img(dlm_eval.pred_outcome)
+            nib.save(  # type: ignore
+                pred_func_img,
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo_{echo_index + 1}.nii.gz",
+            )
+            # write dlm metadata (including betas, t-stats, etc.) to pickle file
+            pickle.dump(
+                dlm_eval,
+                open(
+                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo_{echo_index + 1}_metadata.pkl",
+                    "wb",
+                ),
+            )
 
 
 def _dlm_event_multiecho_mono_exp(
@@ -527,6 +603,155 @@ def _dlm_event_multiecho_mono_exp(
         )
 
 
+def _dlm_physio(
+    dataset: str,
+    data: DatasetLoad,
+    ds: Dataset,
+    tr: float,
+    physio_labels: list[str],
+    subject: str,
+    task: str,
+    space: Literal["volume", "surface"],
+    me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
+) -> None:
+    """
+    Perform Distributed Lag Model (DLM) analysis with physiological regressors
+    on the given data and save results to files.
+
+    Parameters
+    ----------
+    dataset : str
+        Dataset type ('euskalibur')
+    data : DatasetLoad
+        Loaded dataset containing fMRI data and associated information
+    ds : Dataset
+        Dataset object for handling data operations
+    tr: float
+        Repetition time (TR) of fMRI data
+    physio_labels: list[str]
+        List of physiological signal labels
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    space : Literal["volume", "surface"]
+        Space to write output in (surface or volume)
+    me_type : Literal["optcomb", "t2", "s0"]
+        Type of multi-echo data to load (optcomb, t2, or s0).
+        Special suffix used if t2 or s0 data, otherwise ignored.
+    """
+    print(
+        f"Performing DLM with physiological regressors on subject {subject}, task {task}"
+    )
+    if me_type in ["t2", "s0"]:
+        suffix = "_" + me_type
+    else:
+        suffix = ""
+    # loop through physio signals
+    for physio_label in physio_labels:
+        # estimate DLM with physiological regressors
+        # fix number of knots
+        dlm = DistributedLagPhysioModel(
+            tr=tr, neg_nlags=-15, nlags=15, n_knots=5, basis_type="cr"
+        )
+        dlm = dlm.fit(
+            X=[run[physio_label].to_numpy().reshape(-1, 1) for run in data["physio"]],  # type: ignore
+            Y=data["fmri"],  # type: ignore[arg-type]
+        )
+        # estimate functional time courses at each voxel to lagged physio signal
+        dlm_eval = dlm.evaluate()
+        # write predicted functional time courses to nifti file
+        pred_func_img = ds.to_img(dlm_eval.pred_outcome, func_type=space)
+        nib.save(  # type: ignore
+            pred_func_img,
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}{suffix}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
+        )
+
+        # write dlm metadata to pickle file
+        pickle.dump(
+            dlm_eval,
+            open(
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_metadata{suffix}.pkl",
+                "wb",
+            ),
+        )
+
+
+def _dlm_physio_echo(
+    dataset: str,
+    ds: Dataset,
+    tr: float,
+    physio_labels: list[str],
+    subject: str,
+    task: str,
+) -> None:
+    """
+    Perform Distributed Lag Model (DLM) analysis with physiological regressors
+    on each echo individually.
+
+    Parameters
+    ----------
+    dataset : str
+        Dataset type ('euskalibur')
+    ds : Dataset
+        Dataset object for handling data operations
+    tr: float
+        Repetition time (TR) of fMRI data
+    physio_labels: list[str]
+        List of physiological signal labels to analyze
+    subject : str
+        Subject identifier
+    task : str
+        Task identifier
+    """
+    print(
+        f"Performing DLM with physiological regressors on dataset {dataset}, subject {subject}, task {task}"
+    )
+    if not isinstance(ds, DatasetEuskalibur):
+        raise ValueError(
+            "Multi-echo analyses are only supported for the EuskalIBUR dataset"
+        )
+
+    # loop through individual echoes and perform DLM analysis for each echo separately
+    for echo_index in range(len(ECHOS_EUSKALIBUR)):
+        # load echo data given index
+        data = ds.load_data(
+            task=task,
+            me_type="echo",
+            concatenate=False,
+            normalize=True,
+            fmri_normalize_method="percent_change",
+            load_physio=True,
+            echo_n=echo_index,
+        )
+        # perform DLM analysis with physiological regressors for each physio signal separately
+        for physio_label in physio_labels:
+            dlm = DistributedLagPhysioModel(
+                tr=tr, neg_nlags=-15, nlags=15, n_knots=5, basis_type="cr"
+            )
+            dlm = dlm.fit(
+                X=[
+                    run[physio_label].to_numpy().reshape(-1, 1)
+                    for run in data["physio"]
+                ],  # type: ignore
+                Y=data["fmri"],  # type: ignore[arg-type]
+            )
+            dlm_eval = dlm.evaluate()
+            pred_func_img = ds.to_img(dlm_eval.pred_outcome)
+            nib.save(  # type: ignore
+                pred_func_img,
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo_{echo_index + 1}.nii.gz",
+            )
+            # . write dlm metadata to pickle file
+            pickle.dump(
+                dlm_eval,
+                open(
+                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo_{echo_index + 1}_metadata.pkl",
+                    "wb",
+                ),
+            )
+
+
 def _dlm_physio_multiecho_mono_exp(
     dataset: str,
     ds: Dataset,
@@ -656,80 +881,6 @@ def _dlm_physio_multiecho_mono_exp(
             param_eval,
             open(
                 f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_mono_exp_params_metadata.pkl",
-                "wb",
-            ),
-        )
-
-
-def _dlm_physio(
-    dataset: str,
-    data: DatasetLoad,
-    ds: Dataset,
-    tr: float,
-    physio_labels: list[str],
-    subject: str,
-    task: str,
-    space: Literal["volume", "surface"],
-    me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
-) -> None:
-    """
-    Perform Distributed Lag Model (DLM) analysis with physiological regressors
-    on the given data and save results to files.
-
-    Parameters
-    ----------
-    dataset : str
-        Dataset type ('euskalibur')
-    data : DatasetLoad
-        Loaded dataset containing fMRI data and associated information
-    ds : Dataset
-        Dataset object for handling data operations
-    tr: float
-        Repetition time (TR) of fMRI data
-    physio_labels: list[str]
-        List of physiological signal labels
-    subject : str
-        Subject identifier
-    task : str
-        Task identifier
-    space : Literal["volume", "surface"]
-        Space to write output in (surface or volume)
-    me_type : Literal["optcomb", "t2", "s0"]
-        Type of multi-echo data to load (optcomb, t2, or s0).
-        Special suffix used if t2 or s0 data, otherwise ignored.
-    """
-    print(
-        f"Performing DLM with physiological regressors on subject {subject}, task {task}"
-    )
-    if me_type in ["t2", "s0"]:
-        suffix = "_" + me_type
-    else:
-        suffix = ""
-    # loop through physio signals
-    for physio_label in physio_labels:
-        # estimate DLM with physiological regressors
-        # fix number of knots
-        dlm = DistributedLagPhysioModel(
-            tr=tr, neg_nlags=-15, nlags=15, n_knots=5, basis_type="cr"
-        )
-        dlm = dlm.fit(
-            X=[run[physio_label].to_numpy().reshape(-1, 1) for run in data["physio"]],  # type: ignore
-            Y=data["fmri"],  # type: ignore[arg-type]
-        )
-        # estimate functional time courses at each voxel to lagged physio signal
-        dlm_eval = dlm.evaluate()
-        # write predicted functional time courses to nifti file
-        pred_func_img = ds.to_img(dlm_eval.pred_outcome, func_type=space)
-        nib.save(  # type: ignore
-            pred_func_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}{suffix}{'.nii.gz' if space == 'volume' else '.dtseries.nii'}",
-        )
-
-        # write dlm metadata to pickle file
-        pickle.dump(
-            dlm_eval,
-            open(
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_metadata{suffix}.pkl",
                 "wb",
             ),
         )
