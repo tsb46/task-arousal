@@ -7,7 +7,7 @@ Natural Scenes Dataset, including:
 1) Drop dummy volumes
 2) Detrending
 3) High-pass filtering (> 0.01 Hz)
-4) Standardize signal (z-score)
+4) Standardize signal (psc)
 5) Smoothing
 
 Physio preprocessing is performed on raw physiological data, including:
@@ -291,12 +291,10 @@ class PreprocessingPipeline:
                     standardize = True
                     to_std = True
                 elif me_type == "echo":
-                    # for the individual echo files, we apply a more minimal preprocessing pipeline that only includes transformation to standard space, since
-                    # these steps are typically applied after combining the echoes rather than to the individual echo files.
                     highpass_filter = True
                     detrend = True
                     spatial_smooth = False
-                    standardize = False
+                    standardize = True
                     to_std = True
                 else:
                     raise ValueError(f"Unknown multi-echo type: {me_type}")

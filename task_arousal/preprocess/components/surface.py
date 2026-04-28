@@ -128,7 +128,7 @@ def func_surface_pipeline(
     time_by_feat = clean(
         time_by_feat,
         detrend=detrend,
-        standardize=standardize,  # type: ignore
+        standardize="psc" if standardize else False,  # type: ignore
         high_pass=highpass,
         t_r=tr,
     )

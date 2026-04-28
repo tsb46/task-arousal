@@ -72,7 +72,7 @@ def func_volume_pipeline(
     highpass_filter : bool, optional
         Whether to apply high-pass filtering, by default True.
     standardize : bool, optional
-        Whether to apply standardization, by default True.
+        Whether to apply standardization (percent signal change), by default True.
 
     Returns
     -------
@@ -155,7 +155,7 @@ def func_volume_pipeline(
     func_img_proc = clean_img(
         func_img_proc,
         detrend=detrend,
-        standardize=standardize,
+        standardize="psc" if standardize else False,  # type: ignore
         high_pass=highpass,
         mask_img=mask_img,
         t_r=tr,
