@@ -435,7 +435,6 @@ def _dlm_event_echo(
             me_type="echo",
             concatenate=False,
             normalize=True,
-            fmri_normalize_method="percent_change",
             load_physio=False,
             echo_n=echo_index,
         )
@@ -720,7 +719,6 @@ def _dlm_physio_echo(
             me_type="echo",
             concatenate=False,
             normalize=True,
-            fmri_normalize_method="percent_change",
             load_physio=True,
             echo_n=echo_index,
         )
