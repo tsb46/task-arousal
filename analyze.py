@@ -18,14 +18,6 @@ from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
     DistributedLagEventModel,
 )
-from task_arousal.analysis.dlm_echo import (
-    DistributedLagEventEchoModel,
-    DistributedLagPhysioEchoModel,
-)
-from task_arousal.analysis.dlm_echo_mono import (
-    DistributedLagEventMonoexponentialEchoModel,
-    DistributedLagPhysioMonoexponentialEchoModel,
-)
 
 from task_arousal.dataset.dataset_euskalibur import (
     DatasetEuskalibur,
@@ -80,7 +72,7 @@ def main(
     analysis: str | None,
     task: str | None,
     space: Literal["surface", "volume"] = "volume",
-    me_type: Literal["optcomb", "mono_exp", "echo"] = "optcomb",
+    me_type: Literal["optcomb", "echo"] = "optcomb",
     physio_regressor: str | None = None,
 ) -> None:
     """
@@ -98,11 +90,9 @@ def main(
         Task to perform analysis on
     space : Literal["surface", "volume"]
         Space to write output in (surface or volume)
-    me_type : Literal["optcomb", "mono_exp", "echo"] = "optcomb"
-        Type of multi-echo data to load (optcomb, mono_exp, or echo). Only relevant for volume data in the EuskalIBUR dataset. If
-        "echo" is selected, all echo data will be loaded and TE-curve analyses will be performed. If "mono_exp" is selected, monoexponential
-        T2*-weighted data will be loaded and DLM analyses will be performed using a monoexponential basis function.
-        If "optcomb" is selected, optimally combined data will be loaded and standard DLM analyses will be performed.
+    me_type : Literal["optcomb", "echo"] = "optcomb"
+        Type of multi-echo data to load (optcomb or echo). Only relevant for volume data in the EuskalIBUR dataset. If
+        "echo" is selected, all echo data will be loaded and analysis will be performed on each echo. If "optcomb" is selected, optimally combined data will be loaded and standard DLM analyses will be performed.
         Ignored for surface data and NSD dataset.
     physio_regressor : str | None
         Restrict DLM with physiological regressors analysis to specific physiological regressor. Only relevant if performing dlm_physio analysis.
@@ -263,28 +253,6 @@ def main(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
-    # perform monoexponential DLM analyses for multi-echo data using run-wise partial fitting
-    if (
-        any(a in _analysis for a in ["dlm_event", "dlm_physio"])
-        and me_type == "mono_exp"
-    ):
-        for task in tasks_event:
-            print(
-                f"Streaming multi-echo data for dataset {dataset}, subject {_subject}, task {task} for DLM analyses"
-            )
-            if "dlm_event" in _analysis:
-                _dlm_event_multiecho_mono_exp(dataset, ds, tr[task], _subject, task)
-                print(
-                    f"DLM with event regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
-                )
-        for task in tasks:
-            if "dlm_physio" in _analysis:
-                _dlm_physio_multiecho_mono_exp(
-                    dataset, ds, tr[task], physio_labels, _subject, task
-                )
-                print(
-                    f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
-                )
     # perform individual echo DLM analyses for multi-echo data
     if any(a in _analysis for a in ["dlm_event", "dlm_physio"]) and me_type == "echo":
         for task in tasks_event:
@@ -462,146 +430,6 @@ def _dlm_event_echo(
             )
 
 
-def _dlm_event_multiecho_mono_exp(
-    dataset: str,
-    ds: Dataset,
-    tr: float,
-    subject: str,
-    task: str,
-) -> None:
-    """
-    Perform Distributed Lag Model (DLM) analysis of intercept and slope with event regressors
-    on the given data and save results to files. Only for multi-echo data in the EuskalIBUR dataset.
-
-    Parameters
-    ----------
-    ds : Dataset
-        Dataset object for handling data operations
-    tr: float
-        Repetition time (TR) of fMRI data
-    subject : str
-        Subject identifier
-    task : str
-        Task identifier
-    space : Literal["volume", "surface"]
-        Space to write output in (surface or volume)
-    """
-    print(
-        f"Performing Intercept and Slope DLM with event regressors on dataset euskalibur, subject {subject}, task {task}"
-    )
-    if task == "pinel":
-        conditions = PINEL_CONDITIONS
-        event_duration = None
-    elif task == "simon":
-        conditions = SIMON_CONDITIONS
-        # for the Simon task, events are of varying duration which can't be handled with the current run-wise partial fit approach to fitting the DLM echo model,
-        # so we will set a fixed event duration that is long enough to capture the longest events in the Simon task
-        event_duration = 3.0
-    elif task == "motor":
-        conditions = MOTOR_CONDITIONS_EUSKALIBUR
-        event_duration = None
-    else:
-        raise ValueError(f"Task {task} not recognized for EuskalIBUR dataset")
-    if not isinstance(ds, DatasetEuskalibur):
-        raise ValueError(
-            "Multi-echo analyses are only supported for the EuskalIBUR dataset"
-        )
-
-    dlm_event_echo = DistributedLagEventMonoexponentialEchoModel(
-        echo_times_ms=ECHOS_EUSKALIBUR,
-        tr=tr,
-        n_knots=5,
-        basis_type="cr",
-        event_duration=event_duration,
-        regressor_extend=15.0,
-    )
-
-    sessions = ds.file_mapper.get_sessions_task(task)
-    for session in sessions:
-        session_data = ds.load_data(
-            task=task,
-            me_type="echo",
-            sessions=[session],
-            concatenate=False,
-            normalize=False,
-            load_confounds=True,
-            load_physio=False,
-        )
-        runs = ds.file_mapper.tasks_runs[task][session]
-        runs_session = runs if len(runs) > 0 else [None]
-        n_runs = min(
-            len(runs_session),
-            len(session_data["fmri"]),
-            len(session_data["confounds"]),
-            len(session_data["events"]),
-        )
-
-        for run_index in range(n_runs):
-            run = runs_session[run_index]
-            run_events = session_data["events"][run_index]
-            run_fmri = session_data["fmri"][run_index]
-            run_confounds = (
-                session_data["confounds"][run_index].filter(regex="cosine").to_numpy()
-            )
-            print(
-                f"  Partial fit event echo model on session {session}, run {run if run is not None else '01'}"
-            )
-            dlm_event_echo.fit_partial(
-                event_df=run_events,
-                data=run_fmri,
-                confounds=run_confounds,
-            )
-    dlm_event_echo.finalize_fit()
-
-    # loop through conditions and write predicted functional time courses to nifti files
-    suffix = "_monoexp"
-    for condition in conditions:
-        for echo_index in range(dlm_event_echo.E):
-            dlm_eval = dlm_event_echo.predict_curve_across_lags_for_echo(
-                trial=condition,
-                echo_index=echo_index,
-            )
-            effect = dlm_eval.pred_log_effect  # type: ignore
-
-            pred_func_img = ds.to_img(effect, func_type="volume")
-            nib.save(  # type: ignore
-                pred_func_img,
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}{suffix}.nii.gz",
-            )
-            # write dlm metadata (including betas, t-stats, etc.) to pickle file
-            pickle.dump(
-                dlm_eval,
-                open(
-                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_echo{echo_index + 1}{suffix}_metadata.pkl",
-                    "wb",
-                ),
-            )
-
-        param_eval = dlm_event_echo.predict_loglinear_params_across_lags(
-            include_intercept=False,
-            trial=condition,
-        )
-        intercept_img = ds.to_img(param_eval.pred_params[:, 0, :], func_type="volume")
-        nib.save(  # type: ignore
-            intercept_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_intercept.nii.gz",
-        )
-
-        decay_rate_img = ds.to_img(param_eval.pred_params[:, 1, :], func_type="volume")
-        nib.save(  # type: ignore
-            decay_rate_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_decayrate.nii.gz",
-        )
-
-        pickle.dump(
-            param_eval,
-            open(
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_event_{condition}_mono_exp_params_metadata.pkl",
-                "wb",
-            ),
-        )
-
-
 def _dlm_physio(
     dataset: str,
     data: DatasetLoad,
@@ -744,144 +572,10 @@ def _dlm_physio_echo(
             pickle.dump(
                 dlm_eval,
                 open(
-                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo_{echo_index + 1}_metadata.pkl",
+                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}_metadata.pkl",
                     "wb",
                 ),
             )
-
-
-def _dlm_physio_multiecho_mono_exp(
-    dataset: str,
-    ds: Dataset,
-    tr: float,
-    physio_labels: list[str],
-    subject: str,
-    task: str,
-) -> None:
-    """
-    Perform Distributed Lag Model (DLM) analysis of intercept and slope with physiological
-    regressors on the given data and save results to files.
-
-    Parameters
-    ----------
-    dataset : str
-        Dataset type ('euskalibur')
-    ds : Dataset
-        Dataset object for handling data operations
-    tr: float
-        Repetition time (TR) of fMRI data
-    physio_labels: list[str]
-        List of physiological signal labels to analyze
-    subject : str
-        Subject identifier
-    task : str
-        Task identifier
-    """
-    print(
-        f"Performing Intercept and Slope DLM with physiological regressors on dataset {dataset}, subject {subject}, task {task}"
-    )
-    if not isinstance(ds, DatasetEuskalibur):
-        raise ValueError(
-            "Multi-echo analyses are only supported for the EuskalIBUR dataset"
-        )
-
-    dlm_physio_echo_models = {
-        physio_label: DistributedLagPhysioMonoexponentialEchoModel(
-            echo_times_ms=ECHOS_EUSKALIBUR,
-            tr=tr,
-            neg_nlags=-15,
-            nlags=15,
-            n_knots=5,
-            basis_type="cr",
-            regressor_name=physio_label,
-        )
-        for physio_label in physio_labels
-    }
-
-    sessions = ds.file_mapper.get_sessions_task(task)
-    for session in sessions:
-        session_data = ds.load_data(
-            task=task,
-            me_type="echo",
-            sessions=[session],
-            concatenate=False,
-            normalize=False,
-            load_confounds=True,
-            load_physio=True,
-        )
-        runs = ds.file_mapper.tasks_runs[task][session]
-        runs_session = runs if len(runs) > 0 else [None]
-
-        for run_index in range(len(runs_session)):
-            run = runs_session[run_index]
-            run_physio = session_data["physio"][run_index]
-            run_fmri = session_data["fmri"][run_index]
-            run_confounds = (
-                session_data["confounds"][run_index].filter(regex="cosine").to_numpy()
-            )
-
-            for physio_label in physio_labels:
-                print(
-                    f"  Partial fit physio echo model for {physio_label} on session {session}, run {run if run is not None else '01'}"
-                )
-                physio_regressor = np.nan_to_num(
-                    np.asarray(
-                        zscore(run_physio[physio_label].to_numpy()), dtype=float
-                    ),
-                    nan=0.0,
-                ).reshape(-1, 1)
-                dlm_physio_echo_models[physio_label].fit_partial(
-                    regressors=physio_regressor,
-                    data=run_fmri,
-                    confounds=run_confounds,
-                )
-
-    suffix = "_monoexp"
-
-    for physio_label, dlm_physio_echo in dlm_physio_echo_models.items():
-        dlm_physio_echo.finalize_fit()
-
-        for echo_index in range(dlm_physio_echo.E):
-            dlm_eval = dlm_physio_echo.predict_curve_across_lags_for_echo(
-                regressor=physio_label,
-                echo_index=echo_index,
-            )
-            effect = dlm_eval.pred_log_effect  # type: ignore
-
-            pred_func_img = ds.to_img(effect, func_type="volume")
-            nib.save(  # type: ignore
-                pred_func_img,
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}{suffix}.nii.gz",
-            )
-            pickle.dump(
-                dlm_eval,
-                open(
-                    f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_echo{echo_index + 1}{suffix}_metadata.pkl",
-                    "wb",
-                ),
-            )
-
-        param_eval = dlm_physio_echo.predict_loglinear_params_across_lags(
-            regressor=physio_label,
-            include_intercept=False,
-        )
-        intercept_img = ds.to_img(param_eval.pred_params[:, 0, :], func_type="volume")
-        nib.save(  # type: ignore
-            intercept_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_intercept.nii.gz",
-        )
-        decay_rate_img = ds.to_img(param_eval.pred_params[:, 1, :], func_type="volume")
-        nib.save(  # type: ignore
-            decay_rate_img,
-            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_decayrate.nii.gz",
-        )
-        pickle.dump(
-            param_eval,
-            open(
-                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_dlm_physio_{physio_label}_mono_exp_params_metadata.pkl",
-                "wb",
-            ),
-        )
 
 
 def _pca(
@@ -996,12 +690,11 @@ if __name__ == "__main__":
         "-m",
         "--me_type",
         type=str,
-        choices=["optcomb", "mono_exp", "echo"],
+        choices=["optcomb", "echo"],
         required=False,
         default="optcomb",
-        help="Type of multi-echo data to load (optcomb, mono_exp, echo). Only relevant for volume data in the EuskalIBUR dataset. Ignored for surface data and NSD dataset."
-        "If 'echo' is selected, all echo data will be loaded and TE-curve analyses will be performed. If 'mono_exp' is selected, monoexponential T2*-weighted data will be loaded and DLM analyses will "
-        "be performed using a monoexponential basis function. If 'optcomb' is selected, optimally combined data will be loaded and standard DLM analyses will be performed.",
+        help="Type of multi-echo data to load (optcomb, echo). Only relevant for volume data in the EuskalIBUR dataset. Ignored for surface data and NSD dataset."
+        "If 'echo' is selected, all echo data will be loaded and analyse performed on each echo. If 'optcomb' is selected, optimally combined data will be loaded and standard DLM analyses will be performed.",
     )
     # add optional argument to restrict dlm_physio analysis to specific physio regressor
     parser.add_argument(
