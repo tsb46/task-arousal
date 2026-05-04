@@ -9,7 +9,7 @@ import pandas as pd
 import nibabel as nib
 import numpy as np
 
-from task_arousal.constants import MASK_EUSKALIBUR
+from task_arousal.constants import MASK_EUSKALIBUR, ECHOS_EUSKALIBUR, DUMMY_VOLUMES
 from task_arousal.io.file import FileMapperBids
 from .dataset_utils import (
     load_physio as _load_physio,
@@ -86,12 +86,14 @@ class DatasetEuskalibur:
         self,
         task: str,
         func_type: Literal["volume", "surface"] = "volume",
-        me_type: Literal["optcomb", "t2", "s0"] = "optcomb",
+        me_type: Literal["optcomb", "t2", "s0", "echo"] = "optcomb",
         sessions: str | List[str] | None = None,
         concatenate: bool = False,
         normalize: bool = True,
+        echo_n: int | None = None,
         load_func: bool = True,
         load_physio: bool = True,
+        load_confounds: bool = False,
         verbose: bool = True,
     ) -> DatasetLoad:
         """
@@ -103,9 +105,10 @@ class DatasetEuskalibur:
             The task identifier.
         func_type : {'volume', 'surface'}, optional
             The type of functional data to load. Default is 'volume'.
-        me_type : {'optcomb', 't2', 's0'}, optional
+        me_type : {'optcomb', 't2', 's0', 'echo'}, optional
             The type of multi-echo data to load. Default is 'optcomb'.
-            Only relevant if func_type is 'volume'.
+            Only relevant if func_type is 'volume'. Note, "echo" will load the separately
+            preprocessed echo files.
         sessions : str or List[str], optional
             The session identifier(s). If None, all sessions will be loaded.
         concatenate : bool, optional
@@ -113,12 +116,17 @@ class DatasetEuskalibur:
             Note, that event data will not be concatenated to preserve trial timing
             across runs. Default is False.
         normalize : bool, optional
-            Whether to normalize (z-score) the data along the time dimension.
-            Default is True.
+            Whether to normalize the physio and confound along the time dimension. Z-score normalization
+            is the only option for physiological and confound data.
+        echo_n : int, optional
+            If me_type is 'echo', specify which echo to load (0,1,2,3,4). If None, all echoes will be loaded and returned
+            as a tensor of shape (n_voxels, n_echos, n_timepoints). Default is None.
         load_func : bool, optional
             Whether to load fMRI data. Default is True.
         load_physio : bool, optional
             Whether to load physiological data. Default is True.
+        load_confounds : bool, optional
+            Whether to load confound timeseries data (output from fMRIPREP). Default is False.
         verbose : bool, optional
             Whether to print progress messages. Default is True.
         """
@@ -134,6 +142,29 @@ class DatasetEuskalibur:
                     "optimally combined data is only available for surface, ignoring me_type and loading surface data."
                 )
             me_type = "optcomb"
+        # if me_type is not None, ensure it's an allowed value
+        if me_type not in ["optcomb", "t2", "s0", "echo"]:
+            raise ValueError(
+                f"Invalid me_type: {me_type}. Allowed values are 'optcomb', 't2', 's0', and 'echo'."
+            )
+        # concatenation across sessions is not performed for me_type 'echo', it is performed in the analysis stage
+        if me_type == "echo" and concatenate:
+            if verbose:
+                print(
+                    "Concatenation across sessions is not performed for me_type 'echo', it is performed in the analysis stage, ignoring concatenation."
+                )
+            concatenate = False
+        # if echo_n is specified, ensure me_type is 'echo'
+        if echo_n is not None and me_type != "echo":
+            raise ValueError(
+                f"echo_n is only applicable when me_type is 'echo'. Current me_type is '{me_type}'."
+            )
+        # if echo_n is specified, ensure it's a valid echo number
+        if echo_n is not None and (echo_n < 0 or echo_n >= len(ECHOS_EUSKALIBUR)):
+            raise ValueError(
+                f"Invalid echo_n: {echo_n}. Valid echo numbers are between 0 and {len(ECHOS_EUSKALIBUR) - 1}."
+            )
+
         # select conditions and runs based on task
         if task == "pinel":
             conditions = PINEL_CONDITIONS
@@ -175,7 +206,7 @@ class DatasetEuskalibur:
                 f"Loading data for subject '{self.subject}', task '{task}', sessions: {sessions}"
             )
         # initialize dataset dictionary
-        dataset = {"fmri": [], "physio": [], "events": []}
+        dataset = {"fmri": [], "physio": [], "events": [], "confounds": []}
         # load files for each session
         for session in sessions:
             if verbose:
@@ -218,55 +249,90 @@ class DatasetEuskalibur:
                     # load physio file into dataframe
                     physio_df = self.load_physio(physio_files[0], normalize=normalize)
 
+                # load confound data if requested
+                if not load_confounds:
+                    confounds_df = pd.DataFrame()
+                else:
+                    confound_files = self.file_mapper.get_session_confound_files(
+                        session, task, run=run
+                    )
+                    if len(confound_files) == 0:
+                        if verbose:
+                            print(
+                                f"No confound file found for session '{session}' and task "
+                                f"'{task}' and run '{run if run is not None else ''}'."
+                            )
+                        continue
+                    elif len(confound_files) > 1:
+                        raise ValueError(
+                            f"Multiple confound files found for session '{session}' "
+                            f"and task '{task}' and run '{run if run is not None else ''}'."
+                        )
+                    confounds_df = self.load_confounds(
+                        confound_files[0], normalize=normalize
+                    )
+
                 # load fMRI file
                 if not load_func:
                     if verbose:
                         print("Skipping fMRI data loading...")
                     fmri_data = np.array([])
                 else:
-                    fmri_files = self.file_mapper.get_session_fmri_files(
-                        session,
-                        task,
-                        run=run,
-                        desc="preprocfinal",
-                        extension=".nii.gz"
-                        if func_type == "volume"
-                        else ".dtseries.nii",
-                        me_type=me_type,
-                    )
-                    # if no fMRI file is found, raise error
-                    if len(fmri_files) == 0:
-                        # in some scenarios, fmri may be missing or artifacts, skip loading
-                        if verbose:
-                            print(
-                                f"No fMRI file found for session '{session}' and task "
-                                f"'{task}' and run '{run if run is not None else ''}'."
-                            )
-                        continue
-                    elif len(fmri_files) > 1:
-                        # raise error if multiple fMRI files are found
-                        raise ValueError(
-                            f"Multiple fMRI files found for session '{session}' and task '{task}' and "
-                            f"run '{run if run is not None else ''}'."
+                    # load normally (one file) if type is not "echo"
+                    if me_type != "echo":
+                        fmri_files = self.file_mapper.get_session_fmri_files(
+                            session,
+                            task,
+                            run=run,
+                            desc="preprocfinal",
+                            extension=".nii.gz"
+                            if func_type == "volume"
+                            else ".dtseries.nii",
+                            me_type=me_type,
                         )
-                    # If we are in surface mode, store a template dtseries path for later to_img()
-                    if func_type == "surface" and self.surface_template is None:
-                        self.surface_template = fmri_files[0]
-                        if verbose:
-                            print(
-                                f"Using surface template dtseries: {self.surface_template}"
+                        # if no fMRI file is found, raise error
+                        if len(fmri_files) == 0:
+                            # in some scenarios, fmri may be missing or artifacts, skip loading
+                            if verbose:
+                                print(
+                                    f"No fMRI file found for session '{session}' and task "
+                                    f"'{task}' and run '{run if run is not None else ''}'."
+                                )
+                            continue
+                        elif len(fmri_files) > 1:
+                            # raise error if multiple fMRI files are found
+                            raise ValueError(
+                                f"Multiple fMRI files found for session '{session}' and task '{task}' and "
+                                f"run '{run if run is not None else ''}'."
                             )
-                    # load fMRI file into 2D array or 4D image
-                    fmri_data = self.load_fmri(
-                        fmri_files[0],
-                        func_type=func_type,
-                        normalize=normalize,
-                        verbose=verbose,
-                    )
+                        # If we are in surface mode, store a template dtseries path for later to_img()
+                        if func_type == "surface" and self.surface_template is None:
+                            self.surface_template = fmri_files[0]
+                            if verbose:
+                                print(
+                                    f"Using surface template dtseries: {self.surface_template}"
+                                )
+                        # load fMRI file into 2D array or 4D image
+                        fmri_data = self.load_fmri(
+                            fmri_files[0],
+                            func_type=func_type,
+                            verbose=verbose,
+                        )
+                    # load separately preprocessed echo files if me_type is "echo"
+                    else:
+                        fmri_data = self.load_fmri_echoes(
+                            session=session,
+                            task=task,
+                            run=run,
+                            echo_n=echo_n,
+                            verbose=verbose,
+                        )
 
                 # append data to dataset
                 dataset["physio"].append(physio_df)
                 dataset["fmri"].append(fmri_data)
+                dataset["confounds"].append(confounds_df)
+
                 # load event files
                 if has_events:
                     event_files = self.file_mapper.get_session_event_files(
@@ -288,6 +354,10 @@ class DatasetEuskalibur:
 
             dataset["physio"] = [
                 pd.concat(dataset["physio"], axis=0, ignore_index=True)
+            ]
+            # concatenate confounds across sessions if they were loaded
+            dataset["confounds"] = [
+                pd.concat(dataset["confounds"], axis=0, ignore_index=True)
             ]
             # temporally concatenate fmri data
             dataset["fmri"] = [np.concatenate(dataset["fmri"], axis=0)]
@@ -352,6 +422,44 @@ class DatasetEuskalibur:
         event_df.insert(0, "session", session)
         return event_df
 
+    def load_confounds(
+        self, fp: str, normalize: bool = False, remove_dummy: bool = True
+    ) -> pd.DataFrame:
+        """
+        Load the confound timeseries data from a TSV file.
+
+        Parameters
+        ----------
+        fp : str
+            The path to the confound TSV file.
+        normalize : bool, optional
+            Whether to normalize (z-score) the data along the time dimension. Default is False.
+        remove_dummy : bool, optional
+            Whether to remove dummy volume time points from the confound data (as done in the preprocessing pipeline).
+            This should always remain true unless the preprocessing pipeline is modified from defaults. Specifically,
+            the first 10 volumes of each run are removed in the preprocessing pipeline, so if you set remove_dummy to False here,
+            the fmri data and confound data will be misaligned. Default is True.
+
+        Returns
+        -------
+        pd.DataFrame
+            The confound timeseries data as a pandas DataFrame.
+        """
+        if not remove_dummy:
+            print(
+                "Warning: Dummy volumes are not being removed from the confound time series. This was performed as part of the standard preprocessing pipeline. "
+                "This may cause misalignment with fMRI data."
+            )
+        confounds_df = pd.read_csv(fp, sep="\t")
+        # remove dummy volumes
+        if remove_dummy:
+            confounds_df = confounds_df.iloc[DUMMY_VOLUMES:]
+            confounds_df = confounds_df.reset_index(drop=True)
+
+        if normalize:
+            confounds_df = (confounds_df - confounds_df.mean()) / confounds_df.std()
+        return confounds_df
+
     def load_physio(self, fp: str, normalize: bool = False) -> pd.DataFrame:
         """
         Load the preprocessed physio data from a TSV file.
@@ -374,7 +482,6 @@ class DatasetEuskalibur:
         self,
         fp: str,
         func_type: Literal["volume", "surface"] = "volume",
-        normalize: bool = False,
         verbose: bool = True,
     ) -> np.ndarray:
         """
@@ -385,9 +492,58 @@ class DatasetEuskalibur:
             fp,
             func_type=func_type,
             mask_img=self.mask,  # type: ignore
-            normalize=normalize,
             verbose=verbose,
         )
+
+    def load_fmri_echoes(
+        self,
+        session: str,
+        task: str,
+        run: str | None = None,
+        echo_n: int | None = None,
+        verbose: bool = True,
+    ) -> np.ndarray:
+        """
+        Find and load the preprocessed echo fMRI data. Only for multi-echo datasets.
+        Note, echo files are only available for 'volume' functional data type.
+
+        The dataset returns the run-specific echo file as a tensor of shape (n_voxels, n_echos, n_timepoints),
+        where the echo dimension is ordered by echo time (TE).
+
+        If echo_n is specified, only the echo corresponding to that echo number will be loaded and returned as a 2D array of shape (n_timepoints, n_voxels).
+        """
+        fmri_files = self.file_mapper.get_session_echo_files(
+            session, task, run=run, desc="preprocfinal"
+        )
+        # ensure that the number of echo files matches the expected number of echoes for the dataset
+        if len(fmri_files) != len(ECHOS_EUSKALIBUR):
+            raise ValueError(
+                f"Number of echo files found ({len(fmri_files)}) does not match expected number of echoes ({len(ECHOS_EUSKALIBUR)}) for session '{session}', task '{task}', run '{run if run is not None else ''}'."
+            )
+        # if echo_n is specified, get the specific echo file corresponding to that echo number and load it
+        if echo_n is not None:
+            echo_file = fmri_files[echo_n]
+            echo_data = _load_fmri(
+                echo_file,
+                func_type="volume",
+                mask_img=self.mask,  # type: ignore
+                verbose=verbose,
+            )
+            return echo_data
+        else:
+            # load each echo file and stack into a tensor
+            echo_data_list = []
+            for echo_file in fmri_files:
+                echo_data = _load_fmri(
+                    echo_file,
+                    func_type="volume",
+                    mask_img=self.mask,  # type: ignore
+                    verbose=verbose,
+                )
+                echo_data_list.append(echo_data.T)  # transpose to time x voxels
+            # stack echo data into a tensor of shape (n_voxels, n_echos, n_timepoints)
+            echo_data_tensor = np.stack(echo_data_list, axis=1)
+            return echo_data_tensor
 
     def to_img(
         self,

@@ -354,9 +354,10 @@ class BilinearFMRI:
             knots_per_sec=self.knots_per_sec,
             n_knots=self.n_knots,
             knots=self.knots,
-            basis_type=self.basis_type,
+            basis_type=self.basis_type,  # type: ignore
             regressor_duration=self.regressor_duration,
             regressor_extend=self.regressor_extend,
+            normalize_regressors=False,
         )
 
         # create column names for event regressors

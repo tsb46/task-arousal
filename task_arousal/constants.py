@@ -15,7 +15,7 @@ DATA_DIRECTORY_NSD = os.getenv("DATA_DIRECTORY_NSD", "data/nsd")
 IS_DERIVED = os.getenv("IS_DERIVED", "false").lower() == "true"
 
 # Brain masks
-MASK_EUSKALIBUR = "templates/MNI152_T1_3mm_brain_mask_dil_euskalibur.nii.gz"
+MASK_EUSKALIBUR = "templates/MNI152_T1_3mm_brain_mask_euskalibur.nii.gz"
 MASK_GM_EUSKALIBUR = "templates/MNI152_T1_3mm_gm_mask_euskalibur.nii.gz"
 # Surface templates
 SURFACE_LH = "templates/fsLR_den-32k_hemi-L_inflated.surf.gii"
