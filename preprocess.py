@@ -19,6 +19,7 @@ def main(
     skip_me_fit: bool = True,
     skip_physio: bool = False,
     skip_func: bool = False,
+    n_jobs: int = 1,
 ):
     """Perform full preprocessing pipeline on selected subject or all subjects."""
     # loop through tasks and preprocess
@@ -43,6 +44,7 @@ def main(
                     me_type=me_type,
                     skip_me_fit=skip_me_fit,
                     func_type=func_type,
+                    n_jobs=n_jobs,
                 )
     else:
         raise ValueError(f"Unsupported dataset: {dataset}")
@@ -132,6 +134,15 @@ if __name__ == "__main__":
         help="Whether to skip functional data preprocessing. If not provided, "
         "the default is False.",
     )
+    parser.add_argument(
+        "-n",
+        "--n_jobs",
+        type=int,
+        required=False,
+        default=1,
+        help="Number of parallel jobs for fMRI file processing. "
+        "1 means sequential (default). -1 uses all available CPU cores.",
+    )
 
     args = parser.parse_args()
     main(
@@ -143,4 +154,5 @@ if __name__ == "__main__":
         args.skip_me_fit,
         args.skip_physio,
         args.skip_func,
+        args.n_jobs,
     )

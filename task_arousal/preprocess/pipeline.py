@@ -54,10 +54,133 @@ from task_arousal.io.file import FileMapperBids, FileMapperNSD
 from task_arousal.preprocess.components.multiecho_fit import fit_multiecho
 from task_arousal.preprocess.components.physio import physio_pipeline
 from task_arousal.preprocess.components.volume import func_volume_pipeline
+from joblib import Parallel, delayed
+
 from task_arousal.preprocess.components.surface import func_surface_pipeline
 
 # Define a type for the file mapper, which can be either BIDS or NSD
 FileMapper = FileMapperBids | FileMapperNSD
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers — no ``self`` dependency so they are picklable by
+# joblib and can be executed safely in worker processes.
+# ---------------------------------------------------------------------------
+
+
+def _strip_known_fmri_extensions(name: str) -> str:
+    for ext in (".nii.gz", ".dtseries.nii", ".nii"):
+        if name.endswith(ext):
+            return name[: -len(ext)]
+    return name
+
+
+def _make_desc_preprocfinal_name(name: str, me_type: str | None, out_ext: str) -> str:
+    """Create a BIDS-ish output filename with `desc-preprocfinal`."""
+    base = _strip_known_fmri_extensions(name)
+    if me_type == "t2s0":
+        # we assume that 't2' and 's0' are included in the original file name
+        if "t2" in base:
+            me_type = "t2"
+        elif "s0" in base:
+            me_type = "s0"
+        else:
+            raise ValueError(
+                f"Multi-echo type 't2s0' was specified but could not be identified in file name '{name}'. Expected 't2' or 's0' in file name for 't2s0' multi-echo type."
+            )
+        me_ext = me_type
+        source_desc = f"desc-preproc{me_type}"
+    else:
+        me_ext = ""
+        source_desc = "desc-preproc"
+
+    if "desc-preprocfinal" in base:
+        new_base = base
+    elif "desc-preproc" in base:
+        new_base = base.replace(source_desc, f"desc-preprocfinal{me_ext}", 1)
+    elif "_bold" in base:
+        new_base = base.replace("_bold", f"_desc-preprocfinal{me_ext}_bold", 1)
+    else:
+        new_base = f"{base}_desc-preprocfinal{me_ext}"
+
+    return f"{new_base}{out_ext}"
+
+
+def _process_single_fmri(
+    fmri_file: str,
+    output_path: str,
+    func_type: str,
+    tr: float,
+    mask: str,
+    fwhm: float,
+    dummy_vols: int,
+    highpass: float,
+    remove_dummy: bool,
+    detrend: bool,
+    spatial_smooth: bool,
+    standardize: bool,
+    highpass_filter: bool,
+    to_std: bool,
+    native_to_t1w_fp: str | None,
+    t1w_to_std_fp: str | None,
+    std_space_ref_fp: str | None,
+    surface_template_lh: str,
+    surface_template_rh: str,
+    verbose: bool = True,
+) -> None:
+    """Process a single fMRI file and write the result to *output_path*.
+
+    Module-level function (no ``self``) so it can be pickled by ``joblib``
+    and executed in a worker process.
+    """
+    if verbose:
+        print(f"Preprocessing fMRI file: {fmri_file}")
+
+    if func_type == "volume":
+        fmri_proc = func_volume_pipeline(
+            func_fp=fmri_file,
+            tr=tr,
+            brain_mask_fp=mask,
+            fwhm=fwhm,
+            dummy_vols=dummy_vols,
+            highpass=highpass,
+            remove_dummy=remove_dummy,
+            detrend=detrend,
+            spatial_smooth=spatial_smooth,
+            standardize=standardize,
+            highpass_filter=highpass_filter,
+            to_std=to_std,
+            native_to_t1w_fp=native_to_t1w_fp,
+            t1w_to_std_fp=t1w_to_std_fp,
+            std_space_ref_fp=std_space_ref_fp,
+        )
+        if not isinstance(fmri_proc, nib.nifti1.Nifti1Image):
+            raise TypeError(
+                f"Expected NIfTI image for volume output, got {type(fmri_proc)}"
+            )
+        nib.nifti1.save(fmri_proc, output_path)
+    elif func_type == "surface":
+        fmri_proc = func_surface_pipeline(
+            func_fp=fmri_file,
+            tr=tr,
+            dummy_vols=dummy_vols,
+            highpass=highpass,
+            fwhm=fwhm,
+            remove_dummy=remove_dummy,
+            surface_template_lh=surface_template_lh,
+            surface_template_rh=surface_template_rh,
+            detrend=detrend,
+            spatial_smooth=spatial_smooth,
+            standardize=standardize,
+            highpass_filter=highpass_filter,
+        )
+        if not isinstance(fmri_proc, nib.cifti2.cifti2.Cifti2Image):
+            raise TypeError(
+                f"Expected CIFTI image for surface output, got {type(fmri_proc)}"
+            )
+        fmri_proc.to_filename(output_path)
+    else:
+        raise ValueError(f"Unknown functional type: {func_type}")
 
 
 class PreprocessingPipeline:
@@ -101,6 +224,7 @@ class PreprocessingPipeline:
         me_type: Literal["optcomb", "t2s0", "echo"] = "optcomb",
         save_physio_figs: bool = False,
         skip_me_fit: bool = True,
+        n_jobs: int = 1,
         verbose: bool = True,
     ) -> None:
         """
@@ -133,6 +257,10 @@ class PreprocessingPipeline:
             For example, you would set skip_me_fit to True if you already estimated T2* and S0 and just want to re-run the preprocessing
             pipeline on the T2* and S0 estimates. This parameter is ignored for NSD since it is a single-echo dataset. If not provided, the default is True.
             Defaults to True.
+        n_jobs : int, optional
+            Number of parallel jobs for fMRI file processing. ``1`` runs sequentially (default).
+            ``-1`` uses all available CPU cores. Passed directly to ``joblib.Parallel``.
+            Defaults to 1.
         """
         # check workbench is available in the system for surface-based preprocessing
         if func_type == "surface":
@@ -299,12 +427,12 @@ class PreprocessingPipeline:
                 else:
                     raise ValueError(f"Unknown multi-echo type: {me_type}")
 
-                # loop through fmri files and preprocess
+                # Pre-compute transform files and output paths for each fMRI file in
+                # the main process (serial) so that PyBIDS layout access and
+                # file-mapper calls stay single-threaded before work is handed off
+                # to parallel workers.
+                fmri_job_args = []
                 for fmri_file in fmri_files:
-                    if verbose:
-                        print(f"Preprocessing fMRI file: {fmri_file}")
-
-                    # get transformation files to transform to standard space (if applicable) from file mapper
                     if to_std:
                         if not isinstance(self.file_mapper, FileMapperBids):
                             raise TypeError(
@@ -320,47 +448,39 @@ class PreprocessingPipeline:
                         std_ref_fp = None
                         native_to_t1 = None
                         t1_to_std = None
-
-                    # Apply the functional MRI preprocessing pipeline
-                    if func_type == "volume":
-                        fmri_proc = func_volume_pipeline(
-                            func_fp=fmri_file,
-                            tr=tr,
-                            brain_mask_fp=mask,
-                            fwhm=fwhm,
-                            dummy_vols=DUMMY_VOLUMES,
-                            highpass=HIGHPASS,
-                            remove_dummy=remove_dummy,
-                            detrend=detrend,
-                            spatial_smooth=spatial_smooth,
-                            standardize=standardize,
-                            highpass_filter=highpass_filter,
-                            to_std=to_std,
-                            native_to_t1w_fp=native_to_t1,
-                            t1w_to_std_fp=t1_to_std,
-                            std_space_ref_fp=std_ref_fp,
-                        )
-                    elif func_type == "surface":
-                        fmri_proc = func_surface_pipeline(
-                            func_fp=fmri_file,
-                            tr=tr,
-                            dummy_vols=DUMMY_VOLUMES,
-                            highpass=HIGHPASS,
-                            fwhm=fwhm,
-                            remove_dummy=remove_dummy,
-                            surface_template_lh=SURFACE_LH,
-                            surface_template_rh=SURFACE_RH,
-                            detrend=detrend,
-                            spatial_smooth=spatial_smooth,
-                            standardize=standardize,
-                            highpass_filter=highpass_filter,
-                        )
-                    else:
-                        raise ValueError(f"Unknown functional type: {func_type}")
-                    # Write out the preprocessed fMRI file
-                    self.write_out_fmri_file(
-                        fmri_proc, fmri_file, func_type=func_type, me_type=me_type
+                    output_path = self._get_fmri_output_path(
+                        fmri_file, func_type, me_type
                     )
+                    fmri_job_args.append(
+                        (fmri_file, output_path, std_ref_fp, native_to_t1, t1_to_std)
+                    )
+
+                # Process fMRI files — parallel when n_jobs != 1, sequential otherwise.
+                Parallel(n_jobs=n_jobs)(
+                    delayed(_process_single_fmri)(
+                        fmri_file=args[0],
+                        output_path=args[1],
+                        func_type=func_type,
+                        tr=tr,
+                        mask=mask,
+                        fwhm=fwhm,
+                        dummy_vols=DUMMY_VOLUMES,
+                        highpass=HIGHPASS,
+                        remove_dummy=remove_dummy,
+                        detrend=detrend,
+                        spatial_smooth=spatial_smooth,
+                        standardize=standardize,
+                        highpass_filter=highpass_filter,
+                        to_std=to_std,
+                        native_to_t1w_fp=args[2],
+                        t1w_to_std_fp=args[3],
+                        std_space_ref_fp=args[4],
+                        surface_template_lh=SURFACE_LH,
+                        surface_template_rh=SURFACE_RH,
+                        verbose=verbose,
+                    )
+                    for args in fmri_job_args
+                )
 
             # physio preprocessing pipeline (EuskalIBUR and NSD only)
             if self.dataset in ["euskalibur", "nsd"] and not skip_physio:
@@ -493,44 +613,6 @@ class PreprocessingPipeline:
         # get file name from original file path
         file_orig_name = os.path.basename(file_orig)
 
-        def _strip_known_fmri_extensions(name: str) -> str:
-            for ext in (".nii.gz", ".dtseries.nii", ".nii"):
-                if name.endswith(ext):
-                    return name[: -len(ext)]
-            return name
-
-        def _make_desc_preprocfinal_name(
-            name: str, me_type: str | None, out_ext: str
-        ) -> str:
-            """Create a BIDS-ish output filename with `desc-preprocfinal`."""
-            base = _strip_known_fmri_extensions(name)
-            if me_type == "t2s0":
-                # we assume that 't2' and 's0' are included in the original file name
-                if "t2" in base:
-                    me_type = "t2"
-                elif "s0" in base:
-                    me_type = "s0"
-                else:
-                    raise ValueError(
-                        f"Multi-echo type 't2s0' was specified but could not be identified in file name '{name}'. Expected 't2' or 's0' in file name for 't2s0' multi-echo type."
-                    )
-                me_ext = me_type
-                source_desc = f"desc-preproc{me_type}"
-            else:
-                me_ext = ""
-                source_desc = "desc-preproc"
-
-            if "desc-preprocfinal" in base:
-                new_base = base
-            elif "desc-preproc" in base:
-                new_base = base.replace(source_desc, f"desc-preprocfinal{me_ext}", 1)
-            elif "_bold" in base:
-                new_base = base.replace("_bold", f"_desc-preprocfinal{me_ext}_bold", 1)
-            else:
-                new_base = f"{base}_desc-preprocfinal{me_ext}"
-
-            return f"{new_base}{out_ext}"
-
         if func_type == "volume":
             # NIfTI outputs are always `.nii.gz` in this project.
             output_name = _make_desc_preprocfinal_name(
@@ -558,6 +640,34 @@ class PreprocessingPipeline:
 
         else:
             raise ValueError(f"Unknown functional type: {func_type}")
+
+    def _get_fmri_output_path(
+        self,
+        fmri_file: str,
+        func_type: Literal["volume", "surface"],
+        me_type: str | None,
+    ) -> str:
+        """Compute the output file path for a preprocessed fMRI file.
+
+        Called in the main process before the parallel fMRI loop so that each
+        worker receives a ready-made output path and does not need access to
+        ``self``.
+        """
+        if self.dataset == "euskalibur":
+            output_dir = self.file_mapper.get_out_directory(fmri_file)
+        elif self.dataset == "nsd":
+            if not isinstance(self.file_mapper, FileMapperNSD):
+                raise TypeError(
+                    f"NSD dataset requires FileMapperNSD, got {type(self.file_mapper)}"
+                )
+            output_dir = self.file_mapper.data_directory + "/func/final"
+        else:
+            raise ValueError(f"Unknown dataset: {self.dataset}")
+
+        file_orig_name = os.path.basename(fmri_file)
+        out_ext = ".nii.gz" if func_type == "volume" else ".dtseries.nii"
+        output_name = _make_desc_preprocfinal_name(file_orig_name, me_type, out_ext)
+        return f"{output_dir}/{output_name}"
 
     def write_out_physio_file(
         self, physio_dict: dict[str, np.ndarray], file_orig: str | Tuple[str, str]
