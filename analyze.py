@@ -13,7 +13,7 @@ import nibabel as nib
 import numpy as np
 from scipy.stats import zscore
 
-from task_arousal.analysis.pca import PCA
+from task_arousal.analysis.pca import PCA, GroupPCA
 from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
     DistributedLagEventModel,
@@ -59,7 +59,7 @@ TASKS_NSD = ["rest", "nsdimagery"]
 TASKS_EVENT_NSD = ["nsdimagery"]
 
 # define analyses to perform
-ANALYSES = ["dlm_physio", "dlm_event", "pca"]
+ANALYSES = ["dlm_physio", "dlm_event", "pca", "group_pca"]
 
 
 # define Dataset type
@@ -253,6 +253,21 @@ def main(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
 
+    # perform group PCA across echoes (multi-echo data only, euskalibur only)
+    if "group_pca" in _analysis and me_type == "echo" and dataset == "euskalibur":
+        if not isinstance(ds, DatasetEuskalibur):
+            raise ValueError(
+                "Multi-echo analyses are only supported for the EuskalIBUR dataset"
+            )
+        for task in tasks:
+            print(
+                f"Performing Group PCA for dataset {dataset}, subject {_subject}, task {task}"
+            )
+            _group_pca(dataset, ds, _subject, task)
+            print(
+                f"Group PCA complete for dataset {dataset}, subject {_subject}, task {task}"
+            )
+
     # perform individual echo DLM analyses for multi-echo data
     if any(a in _analysis for a in ["dlm_event", "dlm_physio"]) and me_type == "echo":
         for task in tasks_event:
@@ -270,6 +285,85 @@ def main(
                 print(
                     f"DLM with physiological regressors analysis complete for dataset {dataset}, subject {_subject}, task {task}"
                 )
+
+
+def _group_pca(
+    dataset: str,
+    ds: DatasetEuskalibur,
+    subject: str,
+    task: str,
+    n_individual_components: int = 50,
+    n_group_components: int = 10,
+) -> None:
+    """
+    Perform Group PCA across echoes for a given task.
+
+    Each echo is loaded one at a time and its runs are temporally concatenated
+    before fitting an individual PCA. This avoids holding the full multi-echo
+    dataset in memory simultaneously. The per-echo PCAResults are then passed
+    to GroupPCA to estimate shared latent components.
+
+    Per-echo spatial projection maps (encoders, shape (n_components, n_voxels))
+    are written as NIfTI files. The full GroupPCAResults object is saved as a
+    pickle.
+
+    Parameters
+    ----------
+    dataset : str
+        Dataset identifier, used for output path.
+    ds : DatasetEuskalibur
+        Dataset object for loading data and writing images.
+    subject : str
+        Subject identifier.
+    task : str
+        Task identifier.
+    n_individual_components : int
+        Number of components for each per-echo individual PCA. Default 50.
+    n_group_components : int
+        Number of shared components for the group PCA. Default 10.
+    """
+    pca = PCA(n_components=n_individual_components)
+    pca_results = []
+
+    # fit individual PCA per echo, loading one echo at a time
+    for echo_index in range(len(ECHOS_EUSKALIBUR)):
+        data = ds.load_data(
+            task=task,
+            me_type="echo",
+            concatenate=False,
+            normalize=False,
+            load_physio=False,
+            echo_n=echo_index,
+        )
+        # temporally concatenate runs before PCA
+        X = np.concatenate(data["fmri"], axis=0)  # (n_timepoints_total, n_voxels)
+        result = pca.decompose(X)
+        pca_results.append(result)
+        print(
+            f"  Individual PCA complete for echo {echo_index + 1}/{len(ECHOS_EUSKALIBUR)}"
+        )
+
+    # fit group PCA on concatenated PC scores across echoes
+    gpca = GroupPCA(n_components=n_group_components)
+    group_result = gpca.decompose(pca_results)
+
+    # save per-echo spatial projection maps as NIfTI
+    # individual_projections[i]: (n_components, n_voxels) — to_img expects (n_timepoints, n_voxels)
+    for echo_index, projection in enumerate(group_result.individual_projections):
+        proj_img = ds.to_img(projection)
+        nib.save(  # type: ignore
+            proj_img,
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_group_pca_projection_echo_{echo_index + 1}.nii.gz",
+        )
+
+    # save full GroupPCAResults as pickle
+    pickle.dump(
+        group_result,
+        open(
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_group_pca_metadata.pkl",
+            "wb",
+        ),
+    )
 
 
 def _dlm_event(
