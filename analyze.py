@@ -13,7 +13,12 @@ import nibabel as nib
 import numpy as np
 from scipy.stats import zscore
 
-from task_arousal.analysis.pca import PCA, GroupPCA
+from task_arousal.analysis.pca import (
+    PCA,
+    GroupPCA,
+    compute_variance_mask,
+    restore_masked_voxels,
+)
 from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
     DistributedLagEventModel,
@@ -324,6 +329,7 @@ def _group_pca(
     """
     pca = PCA(n_components=n_individual_components)
     pca_results = []
+    voxel_masks = []  # per-echo boolean masks over the full voxel space
 
     # fit individual PCA per echo, loading one echo at a time
     for echo_index in range(len(ECHOS_EUSKALIBUR)):
@@ -337,7 +343,16 @@ def _group_pca(
         )
         # temporally concatenate runs before PCA
         X = np.concatenate(data["fmri"], axis=0)  # (n_timepoints_total, n_voxels)
-        result = pca.decompose(X)
+
+        # mask out outlier voxels (edge/susceptibility regions with extreme variance)
+        mask = compute_variance_mask(X)
+        voxel_masks.append(mask)
+        n_excluded = int((~mask).sum())
+        print(
+            f"  Echo {echo_index + 1}: masking {n_excluded}/{X.shape[1]} outlier voxels "
+            f"(var > 100x median)"
+        )
+        result = pca.decompose(X[:, mask])
         pca_results.append(result)
         print(
             f"  Individual PCA complete for echo {echo_index + 1}/{len(ECHOS_EUSKALIBUR)}"
@@ -348,9 +363,10 @@ def _group_pca(
     group_result = gpca.decompose(pca_results)
 
     # save per-echo spatial projection maps as NIfTI
-    # individual_projections[i]: (n_components, n_voxels) — to_img expects (n_timepoints, n_voxels)
+    # individual_projections[i]: (n_components, n_masked_voxels) — restore before passing to to_img
     for echo_index, projection in enumerate(group_result.individual_projections):
-        proj_img = ds.to_img(projection)
+        projection_full = restore_masked_voxels(projection, voxel_masks[echo_index])
+        proj_img = ds.to_img(projection_full)
         nib.save(  # type: ignore
             proj_img,
             f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_group_pca_projection_echo_{echo_index + 1}.nii.gz",

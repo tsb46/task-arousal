@@ -11,6 +11,65 @@ import numpy as np
 from scipy import linalg
 
 
+def compute_variance_mask(
+    X: np.ndarray, var_threshold_factor: float = 100.0
+) -> np.ndarray:
+    """
+    Compute a boolean mask that excludes voxels with extreme temporal variance.
+
+    Voxels whose variance exceeds ``var_threshold_factor`` times the median
+    voxel variance are flagged as outliers (e.g. edge voxels, high-susceptibility
+    regions) and excluded from the PCA.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Input data matrix of shape (n_samples, n_features).
+    var_threshold_factor : float
+        Multiplier applied to the median variance to set the exclusion threshold.
+        Default 100.0.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask of shape (n_features,). True = keep voxel.
+    """
+    voxel_var = X.var(axis=0)
+    threshold = var_threshold_factor * np.median(voxel_var)
+    return voxel_var <= threshold
+
+
+def restore_masked_voxels(
+    data: np.ndarray,
+    mask: np.ndarray,
+    fill_value: float = np.nan,
+) -> np.ndarray:
+    """
+    Reinsert excluded voxels back into a full-brain array.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Array of shape (n_rows, n_masked_voxels), where the last axis indexes
+        the voxels that were *kept* by ``mask``.
+    mask : np.ndarray
+        Boolean mask of shape (n_voxels,), True = voxel was included in ``data``.
+    fill_value : float
+        Value assigned to excluded voxels. Default ``np.nan``.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (n_rows, n_voxels) with excluded voxels filled by
+        ``fill_value``.
+    """
+    n_rows = data.shape[0]
+    n_voxels = mask.shape[0]
+    out = np.full((n_rows, n_voxels), fill_value, dtype=float)
+    out[:, mask] = data
+    return out
+
+
 @dataclass
 class PCAResults:
     """
