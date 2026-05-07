@@ -343,9 +343,90 @@ def _group_pca(
             f"  Individual PCA complete for echo {echo_index + 1}/{len(ECHOS_EUSKALIBUR)}"
         )
 
+        # --- DEBUG: save per-echo individual PCA results ---
+        # save PCAResults as pickle
+        pickle.dump(
+            result,
+            open(
+                f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_individual_pca_echo_{echo_index + 1}_metadata.pkl",
+                "wb",
+            ),
+        )
+        # save loadings (n_features, n_components) as NIfTI brain map
+        loadings_img = ds.to_img(result.loadings.T)
+        nib.save(  # type: ignore
+            loadings_img,
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_individual_pca_echo_{echo_index + 1}_loadings.nii.gz",
+        )
+
+    # --- DEBUG: compute and save per-echo diagnostics before group PCA ---
+    echo_diagnostics = []
+    for echo_index, result in enumerate(pca_results):
+        # U orthonormality check
+        gram = result.U.T @ result.U
+        max_off_diag = float(np.abs(gram - np.eye(gram.shape[0])).max())
+        # Va row norms (voxel contribution to top PCs)
+        va_row_norms = (result.Va**2).sum(axis=0)
+        diag = {
+            "echo_index": echo_index,
+            # singular value spectrum
+            "s": result.s,
+            "s_0": float(result.s[0]),
+            "s_last": float(result.s[-1]),
+            # pc_scores vs U variance — pc_scores encodes singular values, U does not
+            "pc_scores_std": float(result.pc_scores.std()),
+            "U_std": float(result.U.std()),
+            # voxel-space Va norms — heavy tail indicates edge/susceptibility voxels dominating
+            "va_row_norms_mean": float(va_row_norms.mean()),
+            "va_row_norms_99th": float(np.percentile(va_row_norms, 99)),
+            "va_row_norms_max": float(va_row_norms.max()),
+            # U orthonormality
+            "U_gram_max_off_diag": max_off_diag,
+        }
+        echo_diagnostics.append(diag)
+        print(
+            f"  Echo {echo_index + 1} diagnostics: s[0]={diag['s_0']:.2f}, "
+            f"pc_scores_std={diag['pc_scores_std']:.4f}, U_std={diag['U_std']:.4f}, "
+            f"Va_norm_99th={diag['va_row_norms_99th']:.4f}, U_gram_off_diag={max_off_diag:.2e}"
+        )
+
+    pickle.dump(
+        echo_diagnostics,
+        open(
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_group_pca_echo_diagnostics.pkl",
+            "wb",
+        ),
+    )
+
     # fit group PCA on concatenated PC scores across echoes
     gpca = GroupPCA(n_components=n_group_components)
     group_result = gpca.decompose(pca_results)
+
+    # --- DEBUG: projection/embedding norms across echoes ---
+    proj_emb_diagnostics = []
+    for echo_index, (proj, emb) in enumerate(
+        zip(group_result.individual_projections, group_result.individual_embeddings)
+    ):
+        diag = {
+            "echo_index": echo_index,
+            "projection_row_norm_mean": float(np.linalg.norm(proj, axis=1).mean()),
+            "projection_row_norm_std": float(np.linalg.norm(proj, axis=1).std()),
+            "embedding_col_norm_mean": float(np.linalg.norm(emb, axis=0).mean()),
+            "embedding_col_norm_std": float(np.linalg.norm(emb, axis=0).std()),
+        }
+        proj_emb_diagnostics.append(diag)
+        print(
+            f"  Echo {echo_index + 1} projection norm={diag['projection_row_norm_mean']:.4f}, "
+            f"embedding norm={diag['embedding_col_norm_mean']:.4f}"
+        )
+
+    pickle.dump(
+        proj_emb_diagnostics,
+        open(
+            f"{OUT_DIRECTORY}/{dataset}/sub-{subject}_{task}_group_pca_proj_emb_diagnostics.pkl",
+            "wb",
+        ),
+    )
 
     # save per-echo spatial projection maps as NIfTI
     # individual_projections[i]: (n_components, n_voxels) — to_img expects (n_timepoints, n_voxels)
