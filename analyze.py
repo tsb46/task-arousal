@@ -18,6 +18,7 @@ from task_arousal.analysis.pca import (
     GroupPCA,
     compute_variance_mask,
     restore_masked_voxels,
+    frobenius_normalize_pca_results,
 )
 from task_arousal.analysis.dlm import (
     DistributedLagPhysioModel,
@@ -415,8 +416,18 @@ def _group_pca(
     )
 
     # fit group PCA on concatenated PC scores across echoes
+    # Frobenius-normalise each echo's pc_scores to equalise between-echo scale
+    # differences (scanner scaling, coil sensitivity) while preserving the
+    # relative variance ordering of components within each echo.
+    normalised_results = []
+    scale_factors = []
+    for echo_index, result in enumerate(pca_results):
+        norm_result, scale_factor = frobenius_normalize_pca_results(result)
+        normalised_results.append(norm_result)
+        scale_factors.append(scale_factor)
+        print(f"  Echo {echo_index + 1} Frobenius scale factor: {scale_factor:.2f}")
     gpca = GroupPCA(n_components=n_group_components)
-    group_result = gpca.decompose(pca_results)
+    group_result = gpca.decompose(normalised_results)
 
     # --- DEBUG: projection/embedding norms across echoes ---
     proj_emb_diagnostics = []

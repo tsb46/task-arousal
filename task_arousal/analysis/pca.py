@@ -70,6 +70,51 @@ def restore_masked_voxels(
     return out
 
 
+def frobenius_normalize_pca_results(result: "PCAResults") -> tuple["PCAResults", float]:
+    """
+    Return a copy of PCAResults with ``pc_scores`` divided by their Frobenius norm.
+
+    This equalises total signal energy across views (e.g. echoes) before a
+    group PCA, removing between-view scale differences driven by scanner
+    reconstruction scaling or coil sensitivity while preserving the relative
+    variance ordering of components *within* each view (PC1 still dominates
+    PC50 after normalisation).
+
+    The scale factor is stored in ``scale_factor`` so that callers can
+    recover original-unit decoders if needed (e.g. for TE-scaling analysis)::
+
+        original_decoder = normalised_decoder * result.scale_factor
+
+    ``Va``, ``loadings``, ``U``, ``s``, and ``mean`` are preserved unchanged.
+
+    Parameters
+    ----------
+    result : PCAResults
+        Per-view PCA result from :class:`PCA`.
+
+    Returns
+    -------
+    PCAResults
+        Shallow copy with ``pc_scores`` scaled to unit Frobenius norm.
+    scale_factor : float
+        The Frobenius norm that was divided out.
+    """
+    scale_factor = float(np.linalg.norm(result.pc_scores, ord="fro"))
+    normalised_scores = result.pc_scores / scale_factor
+    return (
+        PCAResults(
+            pc_scores=normalised_scores,
+            loadings=result.loadings,
+            explained_variance=result.explained_variance,
+            U=result.U,
+            s=result.s,
+            Va=result.Va,
+            mean=result.mean,
+        ),
+        scale_factor,
+    )
+
+
 @dataclass
 class PCAResults:
     """
